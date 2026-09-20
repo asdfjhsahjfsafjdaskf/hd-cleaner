@@ -616,6 +616,8 @@ const en = {
     start: "Start monitoring",
     starting: "Taking the snapshot…",
     finish: "Finish and save",
+    defaultName: "Installation",
+    importedSuffix: "(imported)",
     namePlaceholder: "Name of this installation",
     watching: "Watching — {n} changes seen",
     watchingHint: "Run the installer now. Files that only exist during the installation are recorded too.",

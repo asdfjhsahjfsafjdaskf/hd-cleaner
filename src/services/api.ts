@@ -143,7 +143,7 @@ export const api = {
   traceGet: (id: number) => invoke<InstallTrace>("trace_get", { id }),
   traceDelete: (id: number) => invoke<boolean>("trace_delete", { id }),
   traceExport: (id: number, path: string) => invoke<number>("trace_export", { id, path }),
-  traceImport: (path: string) => invoke<InstallTrace>("trace_import", { path }),
+  traceImport: (path: string, suffix: string) => invoke<InstallTrace>("trace_import", { path, suffix }),
 
   cleanerAnalyze: () => invoke<CategorySummary[]>("cleaner_analyze"),
   cleanerAnalyzeAdmin: () => invoke<CategorySummary[]>("cleaner_analyze_admin"),

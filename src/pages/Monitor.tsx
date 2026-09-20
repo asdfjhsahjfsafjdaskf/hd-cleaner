@@ -181,7 +181,7 @@ export function Monitor() {
   const finish = async () => {
     setBusy(true);
     try {
-      const trace = await api.monitorFinish(name);
+      const trace = await api.monitorFinish(name.trim() || t("monitor.defaultName"));
       setName("");
       await refresh();
       setSelected(trace.id);
@@ -206,7 +206,7 @@ export function Monitor() {
     const path = await openDialog({ filters: [{ name: "JSON", extensions: ["json"] }], multiple: false });
     if (typeof path !== "string") return;
     try {
-      const trace = await api.traceImport(path);
+      const trace = await api.traceImport(path, t("monitor.importedSuffix"));
       await refresh();
       setSelected(trace.id);
     } catch (e) {

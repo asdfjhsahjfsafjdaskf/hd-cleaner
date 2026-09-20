@@ -6,10 +6,8 @@ export type Lang = "en" | "pt-BR";
 
 const dictionaries: Record<Lang, unknown> = { en, "pt-BR": ptBR };
 
-function detect(): Lang {
-  const nav = typeof navigator !== "undefined" ? navigator.language : "en";
-  return nav.toLowerCase().startsWith("pt") ? "pt-BR" : "en";
-}
+/** English is the default; Portuguese is a choice in Settings. */
+export const DEFAULT_LANG: Lang = "en";
 
 interface LangState {
   lang: Lang;
@@ -17,7 +15,7 @@ interface LangState {
 }
 
 export const useLang = create<LangState>((set) => ({
-  lang: detect(),
+  lang: DEFAULT_LANG,
   setLang: (lang) => {
     document.documentElement.lang = lang;
     set({ lang });

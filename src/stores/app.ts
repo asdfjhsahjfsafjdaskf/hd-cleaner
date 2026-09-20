@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api, toError } from "../services/api";
-import { useLang, type Lang } from "../i18n";
+import { DEFAULT_LANG, useLang, type Lang } from "../i18n";
 import type { AppInfo, DeleteMode, DriveInfo, ErrorPayload } from "../types";
 import type { Target } from "../services/api";
 
@@ -27,7 +27,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: "dark",
-  language: useLang.getState().lang,
+  language: DEFAULT_LANG,
   fontScale: 1,
   preferFastScan: true,
   followJunctions: false,

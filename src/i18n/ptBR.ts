@@ -620,6 +620,8 @@ const ptBR: DeepString<Dict> = {
     start: "Iniciar monitoramento",
     starting: "Tirando o retrato do sistema…",
     finish: "Concluir e salvar",
+    defaultName: "Instalação",
+    importedSuffix: "(importado)",
     namePlaceholder: "Nome desta instalação",
     watching: "Monitorando — {n} alterações vistas",
     watchingHint: "Rode o instalador agora. Arquivos que só existem durante a instalação também são registrados.",

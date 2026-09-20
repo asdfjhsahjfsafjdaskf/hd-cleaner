@@ -37,8 +37,8 @@ export function Settings() {
         </Row>
         <Row label={t("settings.language")}>
           <select className="select" value={s.language} onChange={(e) => setSetting("language", e.target.value as typeof s.language)}>
-            <option value="pt-BR">Português (Brasil)</option>
             <option value="en">English</option>
+            <option value="pt-BR">Português (Brasil)</option>
           </select>
         </Row>
         <Row label={t("settings.fontScale")}>

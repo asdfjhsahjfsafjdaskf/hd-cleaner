@@ -79,7 +79,8 @@ pub async fn monitor_finish(app: AppHandle, name: String) -> CmdResult<InstallTr
         let roots: Vec<PathBuf> = session.before.roots.iter().map(PathBuf::from).collect();
         let after = monitor::snapshot(&roots);
         let name = name.trim().chars().take(120).collect::<String>();
-        let mut trace = monitor::diff(if name.is_empty() { "Instalação" } else { &name }, &session.before, &after, &watched);
+        // The screen sends a name in the user's language; this is only a guard.
+        let mut trace = monitor::diff(if name.is_empty() { "Installation" } else { &name }, &session.before, &after, &watched);
         // The program list is refreshed: a new program may have appeared.
         *state.programs.write() = None;
         let db = state.db.lock();
@@ -124,13 +125,15 @@ pub fn trace_export(app: AppHandle, id: i64, path: String) -> CmdResult<usize> {
 
 /// Read a trace exported before (from this or another machine).
 #[tauri::command]
-pub fn trace_import(app: AppHandle, path: String) -> CmdResult<InstallTrace> {
+pub fn trace_import(app: AppHandle, path: String, suffix: Option<String>) -> CmdResult<InstallTrace> {
     let data = std::fs::read(&path).map_err(|e| AppError::io("reading the trace", Some(std::path::Path::new(&path)), e).to_payload())?;
     if data.len() > 64 * 1024 * 1024 {
         return Err(AppError::InvalidInput("trace file too large".into()).to_payload());
     }
     let mut trace: InstallTrace = serde_json::from_slice(&data).map_err(|e| AppError::Corrupt(format!("invalid trace file: {e}")).to_payload())?;
-    trace.name = format!("{} (importado)", trace.name.trim());
+    // The screen sends the word in the user's language.
+    let suffix = suffix.unwrap_or_else(|| "(imported)".into());
+    trace.name = format!("{} {}", trace.name.trim(), suffix.trim()).trim().to_string();
     let state = app.state::<AppState>();
     let id = state.db.lock().add_trace(&trace).ui()?;
     trace.id = id;
