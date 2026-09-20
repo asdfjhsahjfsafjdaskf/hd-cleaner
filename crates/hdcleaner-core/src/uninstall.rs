@@ -174,7 +174,13 @@ pub fn run(p: &Program, cmd: &UninstallCommand, stop: &AtomicBool, mut on_progre
     let root = OwnedHandle::new(sei.hProcess).ok_or_else(|| AppError::Helper("uninstaller started without a process handle".into()))?;
     let root_pid = unsafe { GetProcessId(root.raw()) };
 
-    // Track the tree: any process whose parent is tracked becomes tracked.
+    // Track the tree: a process whose parent is tracked becomes tracked — but
+    // only when it started after the uninstaller did. Windows keeps a parent
+    // PID even after that parent is gone and reuses PIDs, so without the time
+    // check an unrelated program that happens to carry a tracked PID as its
+    // parent would keep this wait going forever.
+    let root_created = crate::processes::creation_time(root_pid);
+    let mut created: HashMap<u32, Option<u64>> = HashMap::new();
     let mut tracked: HashMap<u32, String> = HashMap::new();
     tracked.insert(root_pid, std::path::Path::new(&cmd.file).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default());
     let mut seen: Vec<String> = Vec::new();
@@ -187,11 +193,21 @@ pub fn run(p: &Program, cmd: &UninstallCommand, stop: &AtomicBool, mut on_progre
         }
         let procs = snapshot();
         let alive: HashSet<u32> = procs.iter().map(|p| p.0).collect();
+        // A PID that is gone must not adopt anything: it may come back as an
+        // unrelated program.
+        tracked.retain(|pid, _| *pid == root_pid || alive.contains(pid));
         let mut grew = true;
         while grew {
             grew = false;
             for (pid, ppid, name) in &procs {
-                if tracked.contains_key(ppid) && !tracked.contains_key(pid) {
+                if !tracked.contains_key(ppid) || tracked.contains_key(pid) {
+                    continue;
+                }
+                let start = *created.entry(*pid).or_insert_with(|| crate::processes::creation_time(*pid));
+                // Unreadable start time: leave it out rather than risk waiting
+                // for something that was never part of the uninstall.
+                let after_root = matches!((start, root_created), (Some(c), Some(r)) if c >= r);
+                if after_root {
                     tracked.insert(*pid, name.clone());
                     grew = true;
                 }

@@ -606,3 +606,40 @@ export interface CleanReport {
 export type CleanEvent =
   | { event: "category"; data: { id: string; index: number; total: number } }
   | { event: "progress"; data: { id: string; done: number; total: number } };
+
+// ---- Phase 10: installation monitor ----
+
+export interface TraceFile {
+  path: string;
+  size: number;
+  transient: boolean;
+  related: boolean;
+}
+
+export interface TraceRegistry {
+  path: string;
+  kind: "key" | "value";
+  related: boolean;
+}
+
+export interface InstallTrace {
+  id: number;
+  name: string;
+  programId?: string | null;
+  programName?: string | null;
+  startedMs: number;
+  finishedMs: number;
+  files: TraceFile[];
+  registry: TraceRegistry[];
+  services: string[];
+  tasks: string[];
+  bytes: number;
+}
+
+export interface MonitorStatus {
+  running: boolean;
+  startedMs: number;
+  roots: string[];
+  baseline: number;
+  seen: number;
+}

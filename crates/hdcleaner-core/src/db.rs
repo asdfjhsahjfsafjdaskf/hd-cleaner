@@ -82,6 +82,41 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX IF NOT EXISTS idx_scans_root ON scans(root, started_ms DESC);
     "#,
+    // v2: installation traces (what an installer put on the machine)
+    r#"
+    CREATE TABLE IF NOT EXISTS install_traces (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        name         TEXT NOT NULL,
+        program_id   TEXT,
+        program_name TEXT,
+        started_ms   INTEGER NOT NULL,
+        finished_ms  INTEGER NOT NULL,
+        bytes        INTEGER NOT NULL DEFAULT 0,
+        services     TEXT NOT NULL DEFAULT '[]',
+        tasks        TEXT NOT NULL DEFAULT '[]'
+    );
+    CREATE INDEX IF NOT EXISTS idx_traces_started ON install_traces(started_ms DESC);
+    CREATE TABLE IF NOT EXISTS install_trace_files (
+        trace_id  INTEGER NOT NULL REFERENCES install_traces(id) ON DELETE CASCADE,
+        path      TEXT NOT NULL,
+        size      INTEGER NOT NULL DEFAULT 0,
+        transient INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_trace_files ON install_trace_files(trace_id);
+    CREATE TABLE IF NOT EXISTS install_trace_registry (
+        trace_id INTEGER NOT NULL REFERENCES install_traces(id) ON DELETE CASCADE,
+        path     TEXT NOT NULL,
+        kind     TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_trace_registry ON install_trace_registry(trace_id);
+    "#,
+    // v3: mark which trace items look like they belong to the program
+    r#"
+    -- Rows recorded before this column existed are treated as unrelated: the
+    -- uninstaller must never propose something it cannot attribute.
+    ALTER TABLE install_trace_files ADD COLUMN related INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE install_trace_registry ADD COLUMN related INTEGER NOT NULL DEFAULT 0;
+    "#,
 ];
 
 impl Database {
@@ -220,6 +255,100 @@ impl Database {
 
     // ---- scans -------------------------------------------------------------
 
+    // ---- installation traces -------------------------------------------
+
+    /// Store a trace (files and registry rows included) and return its id.
+    pub fn add_trace(&self, t: &crate::monitor::InstallTrace) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO install_traces(name, program_id, program_name, started_ms, finished_ms, bytes, services, tasks)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                t.name,
+                t.program_id,
+                t.program_name,
+                t.started_ms,
+                t.finished_ms,
+                t.bytes as i64,
+                serde_json::to_string(&t.services).unwrap_or_else(|_| "[]".into()),
+                serde_json::to_string(&t.tasks).unwrap_or_else(|_| "[]".into())
+            ],
+        )?;
+        let id = self.conn.last_insert_rowid();
+        {
+            let mut f = self.conn.prepare("INSERT INTO install_trace_files(trace_id, path, size, transient, related) VALUES(?1, ?2, ?3, ?4, ?5)")?;
+            for x in &t.files {
+                f.execute(params![id, x.path, x.size as i64, x.transient as i64, x.related as i64])?;
+            }
+            let mut r = self.conn.prepare("INSERT INTO install_trace_registry(trace_id, path, kind, related) VALUES(?1, ?2, ?3, ?4)")?;
+            for x in &t.registry {
+                r.execute(params![id, x.path, x.kind, x.related as i64])?;
+            }
+        }
+        Ok(id)
+    }
+
+    fn trace_row(r: &rusqlite::Row) -> rusqlite::Result<crate::monitor::InstallTrace> {
+        let services: String = r.get(6)?;
+        let tasks: String = r.get(7)?;
+        Ok(crate::monitor::InstallTrace {
+            id: r.get(0)?,
+            name: r.get(1)?,
+            program_id: r.get(2)?,
+            program_name: r.get(3)?,
+            started_ms: r.get(4)?,
+            finished_ms: r.get(5)?,
+            services: serde_json::from_str(&services).unwrap_or_default(),
+            tasks: serde_json::from_str(&tasks).unwrap_or_default(),
+            bytes: r.get::<_, i64>(8)? as u64,
+            files: Vec::new(),
+            registry: Vec::new(),
+        })
+    }
+
+    /// Traces without their file/registry lists (for the overview).
+    pub fn list_traces(&self, limit: usize) -> Result<Vec<crate::monitor::InstallTrace>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name, program_id, program_name, started_ms, finished_ms, services, tasks, bytes FROM install_traces ORDER BY started_ms DESC LIMIT ?1")?;
+        let rows = stmt.query_map(params![limit as i64], |r| Self::trace_row(r))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// One trace with everything it recorded.
+    pub fn trace(&self, id: i64) -> Result<crate::monitor::InstallTrace> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name, program_id, program_name, started_ms, finished_ms, services, tasks, bytes FROM install_traces WHERE id = ?1")?;
+        let mut t = stmt.query_row(params![id], |r| Self::trace_row(r)).map_err(|_| crate::AppError::NotFound { path: format!("trace {id}") })?;
+        let mut f = self.conn.prepare("SELECT path, size, transient, related FROM install_trace_files WHERE trace_id = ?1 ORDER BY path")?;
+        t.files = f
+            .query_map(params![id], |r| {
+                Ok(crate::monitor::TraceFile { path: r.get(0)?, size: r.get::<_, i64>(1)? as u64, transient: r.get::<_, i64>(2)? != 0, related: r.get::<_, i64>(3)? != 0 })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut g = self.conn.prepare("SELECT path, kind, related FROM install_trace_registry WHERE trace_id = ?1 ORDER BY path")?;
+        t.registry = g
+            .query_map(params![id], |r| Ok(crate::monitor::TraceRegistry { path: r.get(0)?, kind: r.get(1)?, related: r.get::<_, i64>(2)? != 0 }))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(t)
+    }
+
+    /// Traces recorded for a program (by id, or by name when the id is gone).
+    pub fn traces_for(&self, program_id: &str, program_name: &str) -> Result<Vec<crate::monitor::InstallTrace>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, program_id, program_name, started_ms, finished_ms, services, tasks, bytes FROM install_traces
+             WHERE program_id = ?1 OR program_name = ?2 COLLATE NOCASE OR name = ?2 COLLATE NOCASE ORDER BY started_ms DESC",
+        )?;
+        let rows = stmt.query_map(params![program_id, program_name], |r| Self::trace_row(r))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn delete_trace(&self, id: i64) -> Result<bool> {
+        self.conn.execute("DELETE FROM install_trace_files WHERE trace_id = ?1", params![id])?;
+        self.conn.execute("DELETE FROM install_trace_registry WHERE trace_id = ?1", params![id])?;
+        Ok(self.conn.execute("DELETE FROM install_traces WHERE id = ?1", params![id])? > 0)
+    }
+
     pub fn add_scan(&self, meta: &crate::scan::ScanMeta, snapshot_path: Option<&str>) -> Result<i64> {
         self.conn.execute(
             "INSERT INTO scans(root, method, started_ms, duration_ms, files, dirs, total_size, total_alloc, snapshot_path)
@@ -294,6 +423,47 @@ mod tests {
         let ops = db.list_operations(10).unwrap();
         assert_eq!(ops.len(), 2);
         assert!(ops.iter().any(|o| o.id == id2 && o.status == "completed" && o.dry_run));
+    }
+
+    #[test]
+    fn stores_and_reads_install_traces() {
+        use crate::monitor::{InstallTrace, TraceFile, TraceRegistry};
+        let db = Database::open_in_memory().unwrap();
+        let t = InstallTrace {
+            name: "App 1.0".into(),
+            program_id: Some("reg:HKLM:App".into()),
+            program_name: Some("App".into()),
+            started_ms: 10,
+            finished_ms: 20,
+            bytes: 2048,
+            files: vec![
+                TraceFile { path: r"c:\program files\app\app.exe".into(), size: 2048, transient: false, related: true },
+                TraceFile { path: r"c:\users\x\appdata\local\temp\setup.tmp".into(), size: 0, transient: true, related: true },
+            ],
+            registry: vec![TraceRegistry { path: r"hklm\software\vendor\app".into(), kind: "key".into(), related: true }],
+            services: vec!["appsvc".into()],
+            tasks: vec![r"\AppUpdate".into()],
+            ..Default::default()
+        };
+        let id = db.add_trace(&t).unwrap();
+        let list = db.list_traces(10).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!((list[0].name.as_str(), list[0].bytes, list[0].services.len()), ("App 1.0", 2048, 1));
+        assert!(list[0].files.is_empty(), "the overview does not carry the whole list");
+
+        let full = db.trace(id).unwrap();
+        assert_eq!(full.files.len(), 2);
+        assert_eq!(full.registry[0].path, r"hklm\software\vendor\app");
+        assert!(full.files.iter().any(|f| f.transient));
+        assert_eq!(full.tasks, vec![r"\AppUpdate".to_string()]);
+
+        assert_eq!(db.traces_for("reg:HKLM:App", "other").unwrap().len(), 1, "found by program id");
+        assert_eq!(db.traces_for("nope", "app").unwrap().len(), 1, "found by name, case-insensitive");
+        assert!(db.traces_for("nope", "nothing").unwrap().is_empty());
+
+        assert!(db.delete_trace(id).unwrap());
+        assert!(db.list_traces(10).unwrap().is_empty());
+        assert!(db.trace(id).is_err());
     }
 
     #[test]

@@ -6,7 +6,7 @@ import type {
   ErrorPayload, NodeDetails, NodeRow, OperationRecord, Page, ScanEvent, ScanMeta, ScanMethod, ScanRecord,
   ScanStats, SearchSummary, SortKey, ToolInfo, Assessment, ItemResult, Program, AppSize, Identification, SizesEvent,
   PreparedUninstall, RunEvent, Leftover, LeftoverLevel, RemovalSummary, ForcedTarget, ForcedChoice, ProcInfo,
-  ProcessRow, ProcessDetails, TreeKill, StartupItem, TargetPicked, StartupImpact, CategorySummary, CleanItem, CleanEvent, CleanReport,
+  ProcessRow, ProcessDetails, TreeKill, StartupItem, TargetPicked, StartupImpact, CategorySummary, CleanItem, CleanEvent, CleanReport, InstallTrace, MonitorStatus,
 } from "../types";
 
 export function isErrorPayload(e: unknown): e is ErrorPayload {
@@ -134,6 +134,16 @@ export const api = {
   startupSetEnabled: (id: string, command: string, enabled: boolean) => invoke<void>("startup_set_enabled", { id, command, enabled }),
   startupRemove: (id: string, command: string) => invoke<string>("startup_remove", { id, command }),
   startupImpact: (cached: boolean) => invoke<StartupImpact | null>("startup_impact", { cached }),
+
+  monitorStart: () => invoke<MonitorStatus>("monitor_start"),
+  monitorStatus: () => invoke<MonitorStatus>("monitor_status"),
+  monitorCancel: () => invoke<MonitorStatus>("monitor_cancel"),
+  monitorFinish: (name: string) => invoke<InstallTrace>("monitor_finish", { name }),
+  tracesList: () => invoke<InstallTrace[]>("traces_list"),
+  traceGet: (id: number) => invoke<InstallTrace>("trace_get", { id }),
+  traceDelete: (id: number) => invoke<boolean>("trace_delete", { id }),
+  traceExport: (id: number, path: string) => invoke<number>("trace_export", { id, path }),
+  traceImport: (path: string) => invoke<InstallTrace>("trace_import", { path }),
 
   cleanerAnalyze: () => invoke<CategorySummary[]>("cleaner_analyze"),
   cleanerAnalyzeAdmin: () => invoke<CategorySummary[]>("cleaner_analyze_admin"),

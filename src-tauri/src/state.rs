@@ -53,6 +53,12 @@ pub struct UninstallSession {
     pub synthetic: Option<hdcleaner_core::programs::Program>,
 }
 
+/// A running installation-monitor session.
+pub struct MonitorSession {
+    pub before: hdcleaner_core::monitor::Snapshot,
+    pub watcher: hdcleaner_core::monitor::Watcher,
+}
+
 pub struct AppState {
     pub scans: RwLock<HashMap<u32, SharedTree>>,
     pub jobs: Mutex<HashMap<u32, Arc<ScanControl>>>,
@@ -78,6 +84,8 @@ pub struct AppState {
     pub boot_report: Mutex<Option<Arc<hdcleaner_core::bootperf::BootReport>>>,
     /// Last cleaner analysis (cleaning only removes items listed here).
     pub clean_analysis: Mutex<Option<Arc<Vec<hdcleaner_core::cleaner::CategoryResult>>>>,
+    /// Installation monitor in progress, if any.
+    pub monitor: Mutex<Option<MonitorSession>>,
     next_id: AtomicU32,
 }
 
@@ -101,6 +109,7 @@ impl AppState {
             file_icons: Mutex::new(HashMap::new()),
             boot_report: Mutex::new(None),
             clean_analysis: Mutex::new(None),
+            monitor: Mutex::new(None),
             next_id: AtomicU32::new(1),
         }
     }

@@ -43,8 +43,15 @@ fn safe_name(s: &str) -> String {
 
 #[tauri::command]
 pub async fn uninstall_prepare(state: State<'_, AppState>, id: String) -> CmdResult<Prepared> {
-    let list = state.programs.read().clone().ok_or_else(|| AppError::InvalidInput("program list not loaded".into()).to_payload())?;
-    let program = list.iter().find(|p| p.id == id).cloned().ok_or_else(|| AppError::NotFound { path: id.clone() }.to_payload())?;
+    let (list, _) = crate::commands::programs::load(&state, false);
+    let program = match list.iter().find(|p| p.id == id).cloned() {
+        Some(p) => p,
+        // The cached list may predate an install (or another uninstall): look again.
+        None => {
+            let (fresh, _) = crate::commands::programs::load(&state, true);
+            fresh.iter().find(|p| p.id == id).cloned().ok_or_else(|| AppError::NotFound { path: id.clone() }.to_payload())?
+        }
+    };
     let (command, command_error) = match uninstall::command_for(&program, false) {
         Ok(c) => (Some(c), None),
         Err(e) => (None, Some(e.to_payload())),
@@ -178,9 +185,23 @@ pub async fn leftovers_scan(state: State<'_, AppState>, session_id: u32, level: 
         )
         .to_payload());
     }
-    let found = tauri::async_runtime::spawn_blocking(move || leftovers::scan(&program, &others, level, true))
-        .await
-        .map_err(|e| AppError::Helper(e.to_string()).to_payload())?;
+    // An installation trace recorded for this program tells exactly what the
+    // installer created: those items are added to what the rules found.
+    // One lock at a time: holding the guard while locking again deadlocks.
+    let traces: Vec<hdcleaner_core::monitor::InstallTrace> = {
+        let rows = state.db.lock().traces_for(&program.id, &program.name).unwrap_or_default();
+        rows.into_iter().filter_map(|t| state.db.lock().trace(t.id).ok()).collect()
+    };
+    let found = tauri::async_runtime::spawn_blocking(move || {
+        let mut found = leftovers::scan(&program, &others, level, true);
+        for t in &traces {
+            let extra = leftovers::from_trace(&program, &others, t, &found);
+            found.extend(extra);
+        }
+        found
+    })
+    .await
+    .map_err(|e| AppError::Helper(e.to_string()).to_payload())?;
     session(&state, session_id)?.leftovers = found.clone();
     Ok(found)
 }

@@ -192,6 +192,104 @@ pub fn uninstall_entry(p: &Program) -> Option<RegTarget> {
     Some(RegTarget { hive, path: format!(r"{base}\Microsoft\Windows\CurrentVersion\Uninstall\{sub}"), view, value: None })
 }
 
+/// Leftovers taken from an installation trace: what the installer itself put
+/// on the machine and is still there. These are facts, not guesses, so they
+/// come with high confidence — but they still go through the same protection
+/// checks, and anything already found by the normal scan is not repeated.
+pub fn from_trace(p: &Program, others: &[Program], trace: &crate::monitor::InstallTrace, existing: &[Leftover]) -> Vec<Leftover> {
+    let own_dirs = dirs_of(p);
+    let other_dirs: Vec<String> = others
+        .iter()
+        .filter(|o| o.id != p.id)
+        .flat_map(dirs_of)
+        .filter(|d| !own_dirs.iter().any(|o| within(o, d)))
+        .collect();
+    let mut cx = Ctx { keys: name_keys(p), own_dirs, other_dirs, level: Level::Advanced, out: existing.to_vec() };
+    let before = cx.out.len();
+
+    // Folders first (shallowest first), so the files inside them are skipped.
+    let mut dirs: Vec<&crate::monitor::TraceFile> = trace.files.iter().filter(|f| f.related && !f.transient && Path::new(&f.path).is_dir()).collect();
+    dirs.sort_by_key(|f| f.path.matches('\\').count());
+    for d in dirs {
+        cx.push(LeftoverKind::Folder, "files", Level::Safe, 95, "installTrace", d.path.clone(), None);
+    }
+    for f in trace.files.iter().filter(|f| f.related && !f.transient && Path::new(&f.path).is_file()) {
+        if let Some(l) = cx.push(LeftoverKind::File, "files", Level::Safe, 95, "installTrace", f.path.clone(), None) {
+            l.size = f.size;
+        }
+    }
+
+    for r in trace.registry.iter().filter(|r| r.related) {
+        let Some(target) = parse_trace_registry(&r.path) else { continue };
+        if crate::regops::deletion_allowed(&target).is_err() || !crate::regops::key_exists(target.hive, &target.path, target.view) {
+            continue;
+        }
+        let kind = if target.value.is_some() { LeftoverKind::RegistryValue } else { LeftoverKind::RegistryKey };
+        let category = if target.value.is_some() { "startup" } else { "registry" };
+        if let Some(l) = cx.push(kind, category, Level::Safe, 95, "installTrace", target.display(), None) {
+            l.reg = Some(target);
+        }
+    }
+
+    let services = crate::sysitems::services();
+    for name in &trace.services {
+        let Some(s) = services.iter().find(|s| s.name.eq_ignore_ascii_case(name)) else { continue };
+        let image = s.image_path.clone().unwrap_or_default();
+        if let Some(l) = cx.push(LeftoverKind::Service, "services", Level::Safe, 95, "installTrace", format!("{} ({})", s.display_name.clone().unwrap_or_else(|| s.name.clone()), s.name), None) {
+            l.service = Some((s.name.clone(), image));
+        }
+    }
+    let tasks = crate::sysitems::tasks();
+    for path in &trace.tasks {
+        let Some(t) = tasks.iter().find(|t| t.path.eq_ignore_ascii_case(path)) else { continue };
+        if let Some(l) = cx.push(LeftoverKind::Task, "tasks", Level::Safe, 95, "installTrace", t.path.clone(), None) {
+            l.task = Some(t.path.clone());
+        }
+    }
+    // Same finish as a normal scan: real sizes, the path as Windows spells it,
+    // and pre-selection by confidence.
+    let mut out = cx.out.split_off(before);
+    for l in out.iter_mut() {
+        if let Some(real) = display_path(&l.path) {
+            l.path = real;
+        }
+        l.size = match l.kind {
+            LeftoverKind::Folder => crate::appsize::measure_live(&l.path, &crate::scan::ScanControl::new()).map(|m| m.total).unwrap_or(0),
+            LeftoverKind::File | LeftoverKind::Shortcut => std::fs::metadata(&l.path).map(|m| m.len()).unwrap_or(l.size),
+            _ => l.size,
+        };
+        if l.shared {
+            l.confidence = l.confidence.min(40);
+        }
+        l.preselected = l.confidence >= 70 && !l.shared;
+    }
+    out
+}
+
+/// A trace stores paths lowercased; show them the way they are on disk.
+fn display_path(path: &str) -> Option<String> {
+    let real = std::fs::canonicalize(path).ok()?;
+    let s = real.to_string_lossy();
+    Some(s.strip_prefix(r"\\?\").unwrap_or(&s).to_string())
+}
+
+/// `hklm\software\vendor\app` or `hkcu\...\run → name` → a registry target.
+fn parse_trace_registry(path: &str) -> Option<crate::regops::RegTarget> {
+    use crate::registry::{Hive, View};
+    let (head, value) = match path.split_once(" → ") {
+        Some((h, v)) => (h, Some(v.to_string())),
+        None => (path, None),
+    };
+    let (hive, rest) = head.split_once('\\')?;
+    let hive = match hive.to_lowercase().as_str() {
+        "hklm" => Hive::LocalMachine,
+        "hkcu" => Hive::CurrentUser,
+        _ => return None,
+    };
+    let view = if rest.to_lowercase().contains("wow6432node") { View::Reg32 } else { View::Default };
+    Some(crate::regops::RegTarget { hive, path: rest.to_string(), view, value })
+}
+
 /// Scan for leftovers of `p`. `uninstalled` must be true only once the
 /// program is gone (otherwise its live uninstall entry would be proposed).
 pub fn scan(p: &Program, others: &[Program], level: Level, uninstalled: bool) -> Vec<Leftover> {

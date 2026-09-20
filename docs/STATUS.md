@@ -1,6 +1,6 @@
 # HD Cleaner — Status do projeto
 
-**Atualizado em 19/09/2026**, ao final da Fase 9 (limpeza e limpeza de navegadores).
+**Atualizado em 19/09/2026**, ao final da Fase 10 (monitor de instalação).
 
 Este arquivo registra **tudo o que já foi feito** e **tudo o que ainda falta**, seguindo as seções da especificação original. Nenhuma funcionalidade listada aqui como feita é simulada: todas foram compiladas, testadas por testes automatizados e, quando indicado, verificadas no app real, nesta máquina.
 
@@ -17,7 +17,7 @@ Documentos relacionados:
 |---|---|
 | Stack | Rust 1.98 (MSVC) + Tauri 2 + React 19 + TypeScript + Vite |
 | Estrutura | `crates/hdcleaner-core` (toda a lógica) · `crates/hdcleaner-cli` (binário `hdcleaner`) · `crates/test-fixtures` (programa falso de teste) · `src-tauri` (camada de comandos) · `src` (interface) |
-| Testes automatizados | **85 testes Rust + 6 testes de ponta a ponta (desinstalação normal, forçada, inicialização, árvore de processos, limpeza em sandbox e Lixeira) passando**. Os testes destrutivos usam apenas pastas temporárias ou o programa falso de teste (sob o perfil do usuário) |
+| Testes automatizados | **89 testes Rust + 7 testes de ponta a ponta (desinstalação normal, forçada, inicialização, árvore de processos, limpeza em sandbox, Lixeira e monitor de instalação) passando**. Os testes destrutivos usam apenas pastas temporárias ou o programa falso de teste (sob o perfil do usuário) |
 | Tipagem do frontend | `tsc --noEmit` sem erros |
 | Build de release | `hd-cleaner.exe` com 13,4 MB (sem instalador). Instaladores NSIS/MSI ainda não foram gerados |
 | Controle de versão | A pasta **não é um repositório git** e nenhum commit foi feito |
@@ -320,6 +320,18 @@ Os dados locais ficam em `%LOCALAPPDATA%\HDCleaner`:
   - Análise completa em ~0,6 s.
   - Fechar programa: testado com um app de teste pela tela (fechou e a categoria destravou) e, no teste automatizado, com o Bloco de Notas — ele fecha sozinho ao ser pedido, sem ser morto; um processo sem janela não é incomodado.
 
+### Fase 10 — Monitor de instalação
+
+- **Três passos, só leitura:** *Iniciar monitoramento* tira um retrato do sistema (pastas de instalação, Registro, serviços, tarefas agendadas e programas instalados); o usuário roda o instalador; *Concluir e salvar* tira outro retrato e compara. O monitor nunca altera nada — o rastro é só um registro, que pode ser apagado quando quiser.
+- **Retrato:** pastas `C:\Program Files`, `C:\Program Files (x86)`, `C:\ProgramData`, `%LocalAppData%`, `%AppData%` e as duas Áreas de Trabalho (até 12 níveis, com teto de arquivos); Registro em `SOFTWARE` (64 e 32 bits e HKCU), serviços, `App Paths`, `Classes`, as chaves de desinstalação e o `Installer\UserData`; valores de `Run`/`RunOnce`; lista de serviços, tarefas e programas.
+- **Durante a instalação:** `ReadDirectoryChangesW` por pasta raiz (cancelado com `CancelIoEx` ao terminar) registra também **arquivos que só existem durante a instalação** — eles ficam marcados como temporários e não entram na desinstalação.
+- **Atribuição conservadora:** outro programa quase sempre escreve nas mesmas pastas enquanto um instalador roda (aconteceu de verdade no teste: o Spotify se atualizou no meio). Só entra como "deste programa" o item cujo caminho carrega o nome do programa detectado (ou o nome que o usuário deu); o resto aparece separado, como **"Outras alterações no mesmo período"**, e **nunca** é proposto para remoção. Teste automatizado cobre exatamente esse caso.
+- **Rastro salvo no banco** (`install_traces`, `install_trace_files`, `install_trace_registry`) com data, duração, contagens, tamanho e o programa detectado. Dá para **exportar** para JSON (levar para outra máquina), **importar** e **excluir**.
+- **Usado na desinstalação:** ao desinstalar, as sobras encontradas pelas regras são somadas às do rastro (confiança 95%, motivo "Registrado pelo monitor de instalação"), sem duplicar o que as regras já acharam e passando pelas mesmas proteções. É assim que aparecem sobras que as regras não procuram — por exemplo um arquivo solto que o instalador deixou na pasta do fabricante.
+- **Verificado na tela** (app de teste `hdcleaner-fake-app`): retrato em ~8 s, 62 alterações contadas durante a instalação, rastro salvo com o programa identificado, e a desinstalação pelo rastro listou e removeu as 7 sobras — inclusive a que **só o rastro conhecia** — com backup.
+- **Testes:** `monitor_flow` (retrato → observação → instalação de verdade → comparação; confere pastas, arquivos, chaves e valor de inicialização criados, o programa identificado, o ruído de outro programa marcado como não relacionado, ida e volta pelo banco e as sobras geradas pelo rastro — incluindo uma que as regras sozinhas não encontram e a ausência de duplicatas).
+- **Corrigido durante a verificação:** a espera pelo desinstalador adotava processos alheios (o Windows mantém o PID do pai mesmo depois que ele morre e reaproveita PIDs) e ficava presa; agora um processo só entra na árvore se tiver começado **depois** do desinstalador, e PIDs que já morreram saem da lista. Também: o assistente mostrava uma janela vazia quando o preparo falhava, e o preparo não recarregava a lista de programas quando ela estava velha.
+
 ### Recursos das fases 11 e 12 adiantados
 
 - **Exclusão segura:**
@@ -395,14 +407,7 @@ Durante o teste da categoria "Temporários do Windows", a limpeza real foi execu
 Legenda: 🔴 não iniciado · 🟡 parcial
 
 
-### Fase 10 — Monitor de instalação 🔴 (próxima)
-
-- Snapshot inteligente antes da instalação (Registro nas áreas relevantes, serviços, tarefas, inicialização, pastas-alvo).
-- Monitoramento durante a instalação via USN Journal ou `ReadDirectoryChangesW` e notificações do Registro.
-- Snapshot depois e comparação, gerando um **INSTALLATION TRACE**.
-- Banco de traces (tabelas `install_traces`, `install_trace_files`, `install_trace_registry`) com exportar, importar, excluir e **usar o trace na desinstalação**.
-
-### Fase 11 — Backups 🟡
+### Fase 11 — Backups 🟡 (próxima)
 
 - Já existe: o journal de operações, o dry run, o uso da Lixeira, o **backup .reg + manifest.json** antes de remover sobras e o **ponto de restauração** opcional.
 - Falta:

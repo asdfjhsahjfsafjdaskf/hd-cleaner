@@ -29,6 +29,10 @@ struct Paths {
     install: PathBuf,
     roaming: PathBuf,
     local: PathBuf,
+    /// Data under a vendor folder (`…\HdcFakeVendor\<name>`), next to a loose
+    /// `<name>.log` that the leftover rules do not look for — only an
+    /// installation trace knows about that one.
+    vendor_data: PathBuf,
     shortcut: PathBuf,
 }
 
@@ -37,8 +41,13 @@ fn paths(name: &str) -> Paths {
         install: env("LOCALAPPDATA").join("Programs").join(name),
         roaming: env("APPDATA").join(name),
         local: env("LOCALAPPDATA").join(name),
+        vendor_data: vendor_root().join(name),
         shortcut: env("APPDATA").join(r"Microsoft\Windows\Start Menu\Programs").join(format!("{name}.lnk")),
     }
+}
+
+fn vendor_root() -> PathBuf {
+    env("LOCALAPPDATA").join(VENDOR)
 }
 
 fn startup_link(name: &str) -> PathBuf {
@@ -100,6 +109,11 @@ fn install(name: &str) {
     std::fs::write(p.local.join("Cache").join("blob.bin"), vec![7u8; 256 * 1024]).unwrap();
     std::fs::create_dir_all(p.local.join("logs")).unwrap();
     std::fs::write(p.local.join("logs").join("app.log"), "started\n").unwrap();
+    std::fs::create_dir_all(&p.vendor_data).unwrap();
+    std::fs::write(p.vendor_data.join("state.bin"), vec![9u8; 32 * 1024]).unwrap();
+    // A loose file dropped in the vendor folder: leftover rules look for
+    // folders there, so only an installation trace knows about this one.
+    std::fs::write(vendor_root().join(format!("{name}.log")), "install log\n").unwrap();
 
     let vendor = create_key(&format!(r"Software\{VENDOR}\{}", key_name(name)));
     set_str(vendor, "InstallDir", &p.install.to_string_lossy());
@@ -134,9 +148,12 @@ fn sloppy_uninstall(name: &str) {
 
 fn cleanup(name: &str) {
     let p = paths(name);
-    for d in [&p.install, &p.roaming, &p.local] {
+    for d in [&p.install, &p.roaming, &p.local, &p.vendor_data] {
         let _ = std::fs::remove_dir_all(d);
     }
+    // Only if this was the last program of the fake vendor.
+    let _ = std::fs::remove_file(vendor_root().join(format!("{name}.log")));
+    let _ = std::fs::remove_dir(vendor_root());
     let _ = std::fs::remove_file(&p.shortcut);
     let _ = std::fs::remove_file(startup_link(name));
     delete_value(r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run", name);

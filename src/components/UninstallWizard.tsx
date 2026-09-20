@@ -230,6 +230,10 @@ export function UninstallWizard() {
         )}
       </>
     );
+  } else if (step === "confirm" && error) {
+    // Preparation itself failed: show why instead of an empty dialog.
+    body = <ErrorView error={error} />;
+    footer = <button className="btn" onClick={close}>{t("common.close")}</button>;
   } else if (step === "restorePoint") {
     body = error ? (
       <>

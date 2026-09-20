@@ -22,6 +22,7 @@ pub mod format;
 pub mod fsops;
 pub mod icons;
 pub mod leftovers;
+pub mod monitor;
 pub mod processes;
 pub mod programs;
 pub mod protection;

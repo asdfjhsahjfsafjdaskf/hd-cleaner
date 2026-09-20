@@ -2,6 +2,7 @@ pub mod app;
 pub mod cleaner;
 pub mod files;
 pub mod forced;
+pub mod monitor;
 pub mod programs;
 pub mod scan;
 pub mod search;

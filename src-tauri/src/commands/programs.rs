@@ -20,7 +20,10 @@ pub struct ProgramList {
     pub appx_error: Option<ErrorPayload>,
 }
 
-fn load(state: &AppState, refresh: bool) -> (Arc<Vec<Program>>, Option<ErrorPayload>) {
+/// The cached program list, scanning once when nothing is cached yet (other
+/// screens — the install monitor, Target Mode — can start an uninstall before
+/// the Programs page was ever opened).
+pub(crate) fn load(state: &AppState, refresh: bool) -> (Arc<Vec<Program>>, Option<ErrorPayload>) {
     if !refresh {
         if let Some(p) = state.programs.read().clone() {
             return (p, None);
