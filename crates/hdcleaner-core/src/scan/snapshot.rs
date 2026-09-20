@@ -134,7 +134,8 @@ pub fn load(path: &Path) -> Result<ScanTree> {
 pub fn read_from(r: &mut impl Read) -> Result<ScanTree> {
     let mut magic = [0u8; 8];
     r.read_exact(&mut magic).map_err(|e| AppError::Corrupt(format!("reading snapshot header: {e}")))?;
-    if &magic != SNAPSHOT_MAGIC {
+    // Snapshots written before the product was renamed are still readable.
+    if &magic != SNAPSHOT_MAGIC && &magic != crate::branding::SNAPSHOT_MAGIC_LEGACY {
         return Err(AppError::Corrupt("not a snapshot file (bad magic)".into()));
     }
     let mut dec = lz4_flex::frame::FrameDecoder::new(r);

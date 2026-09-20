@@ -252,7 +252,7 @@ export function DiskAnalyzer() {
   };
 
   const openSnapshot = async () => {
-    const path = await openDialog({ filters: [{ name: "Snapshot", extensions: ["nxs"] }], multiple: false });
+    const path = await openDialog({ filters: [{ name: "Snapshot", extensions: ["hdcs", "nxs"] }], multiple: false });
     if (typeof path !== "string") return;
     try {
       const [id, meta] = await api.openSnapshot(path);
@@ -264,7 +264,7 @@ export function DiskAnalyzer() {
 
   const saveSnapshot = async () => {
     if (a.scanId === undefined) return;
-    const path = await saveDialog({ filters: [{ name: "Snapshot", extensions: ["nxs"] }], defaultPath: "scan.hdcs" });
+    const path = await saveDialog({ filters: [{ name: "Snapshot", extensions: ["hdcs", "nxs"] }], defaultPath: "scan.hdcs" });
     if (!path) return;
     api.exportSnapshot(a.scanId, path).then(() => app.toast("success", path)).catch(app.toastError);
   };
