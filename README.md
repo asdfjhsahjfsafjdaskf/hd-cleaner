@@ -112,4 +112,4 @@ monitor de instalação, quarentena e página de Backups.
 
 ## Licença
 
-MIT — veja [LICENSE](LICENSE).
+Domínio público ([The Unlicense](LICENSE)): use, copie, modifique e distribua à vontade, sem precisar dar crédito.
