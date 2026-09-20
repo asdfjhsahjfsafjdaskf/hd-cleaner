@@ -82,6 +82,15 @@ pub async fn cleaner_analyze(app: AppHandle) -> CmdResult<Vec<CategorySummary>> 
     Ok(out)
 }
 
+/// Ask the browser/app of a category to close, so its data can be cleaned.
+/// Nothing is forced: processes still running afterwards are returned.
+#[tauri::command]
+pub async fn cleaner_close_program(id: String) -> CmdResult<Vec<hdcleaner_core::processes::ProcInfo>> {
+    tauri::async_runtime::spawn_blocking(move || cleaner::close_program(&id, std::time::Duration::from_secs(8)).ui())
+        .await
+        .map_err(|e| AppError::Helper(e.to_string()).to_payload())?
+}
+
 /// Items of one analysed category (what exactly would be removed).
 #[tauri::command]
 pub fn cleaner_items(app: AppHandle, id: String, offset: usize, limit: usize) -> CmdResult<Page<CleanItem>> {

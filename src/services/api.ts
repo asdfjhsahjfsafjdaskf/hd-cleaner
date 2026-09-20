@@ -137,6 +137,7 @@ export const api = {
 
   cleanerAnalyze: () => invoke<CategorySummary[]>("cleaner_analyze"),
   cleanerAnalyzeAdmin: () => invoke<CategorySummary[]>("cleaner_analyze_admin"),
+  cleanerCloseProgram: (id: string) => invoke<ProcInfo[]>("cleaner_close_program", { id }),
   cleanerItems: (id: string, offset: number, limit: number) => invoke<Page<CleanItem>>("cleaner_items", { id, offset, limit }),
   cleanerRun: (ids: string[], dryRun: boolean, onEvent: (e: CleanEvent) => void) => {
     const ch = new Channel<CleanEvent>();

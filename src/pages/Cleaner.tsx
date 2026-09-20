@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronDown, ChevronRight, Play, ShieldAlert, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, LogOut, Play, ShieldAlert, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ErrorView } from "../components/ErrorView";
 import { Modal } from "../components/Modal";
@@ -93,6 +93,20 @@ export function Cleaner() {
       app.toastError(e);
     }
     setBusy(false);
+  };
+
+  // Ask a blocked browser/app to close (never forced), then analyze again.
+  const closeProgram = async (id: string, name: string) => {
+    setBusy(true);
+    try {
+      const left = await api.cleanerCloseProgram(id);
+      if (left.length) app.toast("info", t("cleaner.stillOpen", { name }));
+      else app.toast("success", t("cleaner.closed", { name }));
+    } catch (e) {
+      app.toastError(e);
+    }
+    setBusy(false);
+    await analyze(true);
   };
 
   const byId = useMemo(() => new Map((cats ?? []).map((c) => [c.category.id, c])), [cats]);
@@ -226,7 +240,14 @@ export function Cleaner() {
                           </button>
                         </div>
                         <div className="row wrap" style={{ gap: "0.6rem", fontSize: "0.8rem", paddingLeft: "1.4rem" }}>
-                          {c.running && <span style={{ color: "var(--warning)" }}>{t("cleaner.running", { name: c.category.owner ?? "" })}</span>}
+                          {c.running && (
+                            <>
+                              <span style={{ color: "var(--warning)" }}>{t("cleaner.running", { name: c.category.owner ?? "" })}</span>
+                              <button className="btn ghost sm" disabled={busy} onClick={() => void closeProgram(id, c.category.owner ?? id)}>
+                                <LogOut size={13} />{t("cleaner.closeApp", { name: c.category.owner ?? "" })}
+                              </button>
+                            </>
+                          )}
                           {c.category.warning && <span className="faint">{t(`cleaner.w_${c.category.warning}`)}</span>}
                           {c.recentSkipped > 0 && <span className="faint">{t("cleaner.recentKept", { n: formatNumber(c.recentSkipped) })}</span>}
                           {c.adminPending && <span className="faint">{t("cleaner.adminPending")}</span>}

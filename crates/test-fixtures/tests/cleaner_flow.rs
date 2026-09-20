@@ -82,6 +82,13 @@ fn analyze_then_clean_in_a_sandbox() {
         .unwrap();
     drop(places);
 
+    // A program that is not in the fixed list: its cache folder is found too.
+    write(&roaming.join(r"MyLittleApp\Cache\entry_1"), 700);
+    write(&roaming.join(r"MyLittleApp\config.json"), 10);
+    // Empty cache folders and this application's own data are not listed.
+    std::fs::create_dir_all(roaming.join(r"EmptyApp\Cache")).unwrap();
+    write(&roaming.join(r"app.hdcleaner.desktop\Cache\x"), 100);
+
     let results = cleaner::analyze();
     let t = find(&results, "userTemp");
     assert_eq!((t.count, t.recent_skipped), (1, 1), "only files older than 24 h");
@@ -95,6 +102,11 @@ fn analyze_then_clean_in_a_sandbox() {
     assert!(downloads.items.iter().any(|i| i.display.as_deref() == Some(r"C:\Users\x\Downloads\a.zip")));
     let discord = find(&results, "app.discord");
     assert_eq!(discord.count, 1);
+    let mine = find(&results, "app.mylittleapp");
+    assert_eq!((mine.count, mine.category.owner.as_deref()), (1, Some("MyLittleApp")));
+    assert!(!mine.category.default_on, "an unknown program is listed but not pre-selected");
+    assert!(results.iter().all(|r| r.category.id != "app.emptyapp"), "empty cache folder is not listed");
+    assert!(results.iter().all(|r| !r.category.id.contains("hdcleaner")), "this application's own cache is never offered");
 
     let backup = sb.path().join("backup");
     // Dry run changes nothing.

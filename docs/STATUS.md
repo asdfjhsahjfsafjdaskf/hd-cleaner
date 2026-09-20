@@ -17,7 +17,7 @@ Documentos relacionados:
 |---|---|
 | Stack | Rust 1.98 (MSVC) + Tauri 2 + React 19 + TypeScript + Vite |
 | Estrutura | `crates/hdcleaner-core` (toda a lógica) · `crates/hdcleaner-cli` (binário `hdcleaner`) · `crates/test-fixtures` (programa falso de teste) · `src-tauri` (camada de comandos) · `src` (interface) |
-| Testes automatizados | **84 testes Rust + 6 testes de ponta a ponta (desinstalação normal, forçada, inicialização, árvore de processos, limpeza em sandbox e Lixeira) passando**. Os testes destrutivos usam apenas pastas temporárias ou o programa falso de teste (sob o perfil do usuário) |
+| Testes automatizados | **85 testes Rust + 6 testes de ponta a ponta (desinstalação normal, forçada, inicialização, árvore de processos, limpeza em sandbox e Lixeira) passando**. Os testes destrutivos usam apenas pastas temporárias ou o programa falso de teste (sob o perfil do usuário) |
 | Tipagem do frontend | `tsc --noEmit` sem erros |
 | Build de release | `hd-cleaner.exe` com 13,4 MB (sem instalador). Instaladores NSIS/MSI ainda não foram gerados |
 | Controle de versão | A pasta **não é um repositório git** e nenhum commit foi feito |
@@ -310,12 +310,15 @@ Os dados locais ficam em `%LOCALAPPDATA%\HDCleaner`:
 - **Listas do Registro** (Executar, endereços digitados, Office): exportadas para um `.reg` antes de apagar; só valores das chaves permitidas são tocados; a tela mostra o texto de cada item.
 - **Pastas do Windows:** um usuário comum não consegue nem listar `C:\Windows\Temp`. A tela marca essas categorias como "precisa de administrador para listar" e o botão **Listar pastas do Windows (admin)** as lista pelo helper (leitura); a limpeza delas também vai pelo helper, num único UAC.
 - Cada categoria mostra itens, tamanho, risco, avisos e "N arquivos com menos de 24 h mantidos"; dá para **ver a lista exata** de itens antes de limpar. Há **Simulação** e o resultado por categoria (removidos, liberados, em uso, alterados, sem permissão, falhas). Tudo vai para o histórico (`cleanup`).
+- **Fechar o programa pela tela:** quando um navegador ou app está aberto, a categoria mostra o botão "Fechar <programa>". O pedido é o mesmo de clicar no X da janela (`WM_CLOSE`) — nada é forçado, então um programa com trabalho não salvo pode perguntar e continuar aberto; nesse caso a tela avisa que ele continua aberto. Depois de fechar, a análise refaz sozinha e a categoria destrava.
+- **Aplicativos além da lista fixa:** além de Discord/VS Code/Teams/Spotify/Steam, o catálogo **descobre** pastas de cache em `%AppData%` e `%LocalAppData%` (`Cache`, `Code Cache`, `GPUCache`, `CachedData`, shaders…), em até dois níveis. Quando o nome da pasta casa com um programa instalado, a categoria usa o nome do programa e vem pré-marcada como Segura; quando não casa, aparece como **Revisar e não vem marcada**. Pastas vazias, pastas do Windows, dos navegadores já cobertos e **a pasta do próprio HD Cleaner** ficam de fora. Nesta máquina: 70 categorias no total (CapCut 793 MB, WhatsApp 718 MB, Riot Client 326 MB, CapoRhythia 277 MB…).
 - **CLI:** `hdcleaner cleanup` (análise), `hdcleaner cleanup --items <id>`, `hdcleaner cleanup --run <ids|default> --confirm|--dry-run`.
 - **Verificado:**
   - Sandbox (pastas temporárias no lugar de TEMP/LOCALAPPDATA/APPDATA, com perfil falso do Chrome e do Discord): análise, simulação e limpeza real pela tela; cache e temporários antigos removidos; cookies, favoritos, dados de site, arquivo recente (< 24 h) e cache do Discord (aberto) mantidos; downloads apagados do banco sem perder o histórico; itens recentes e Jump Lists limpos.
   - No PC real: a caixa **Executar** foi limpa (10 valores) e depois **restaurada a partir do backup .reg** gerado pelo próprio Nexus — o backup funciona.
   - Categoria de administrador pelo helper: `C:\Windows\Temp` (ver a nota no fim desta seção).
   - Análise completa em ~0,6 s.
+  - Fechar programa: testado com um app de teste pela tela (fechou e a categoria destravou) e, no teste automatizado, com o Bloco de Notas — ele fecha sozinho ao ser pedido, sem ser morto; um processo sem janela não é incomodado.
 
 ### Recursos das fases 11 e 12 adiantados
 
@@ -391,10 +394,6 @@ Durante o teste da categoria "Temporários do Windows", a limpeza real foi execu
 
 Legenda: 🔴 não iniciado · 🟡 parcial
 
-### Pendências da Fase 9 🟡
-
-- Navegadores **abertos** são bloqueados (os arquivos ficam travados). Não existe a opção de "fechar o navegador por mim".
-- Categorias de aplicativos cobrem uma lista conhecida (Discord, VS Code, Teams clássico, Spotify, Steam); outros programas não têm categoria própria.
 
 ### Fase 10 — Monitor de instalação 🔴 (próxima)
 

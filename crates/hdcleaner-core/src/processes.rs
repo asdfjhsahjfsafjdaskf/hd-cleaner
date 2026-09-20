@@ -462,6 +462,44 @@ pub fn terminate_elevated(pid: u32, expected_path: Option<&str>, tree: bool) -> 
     Ok(list.into_iter().map(TreeKill::from).collect())
 }
 
+/// Ask a process to close: the same as clicking the window's X. Nothing is
+/// forced, so a program with unsaved work can show its own dialog and stay.
+/// Returns how many windows were asked.
+pub fn request_close(pid: u32) -> usize {
+    use windows_sys::Win32::Foundation::{HWND, LPARAM};
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+    struct Ask {
+        pid: u32,
+        sent: usize,
+    }
+    unsafe extern "system" fn cb(h: HWND, l: LPARAM) -> windows_sys::core::BOOL {
+        let a = &mut *(l as *mut Ask);
+        let mut owner = 0u32;
+        GetWindowThreadProcessId(h, &mut owner);
+        // Only real, visible windows of that process (not tool/message windows).
+        if owner == a.pid && IsWindowVisible(h) != 0 && GetWindow(h, GW_OWNER).is_null() {
+            PostMessageW(h, WM_CLOSE, 0, 0);
+            a.sent += 1;
+        }
+        1
+    }
+    let mut a = Ask { pid, sent: 0 };
+    unsafe { EnumWindows(Some(cb), &mut a as *mut Ask as LPARAM) };
+    a.sent
+}
+
+/// Wait until the given processes exit; returns the ones still running.
+pub fn wait_for_exit(pids: &[u32], timeout: std::time::Duration) -> Vec<u32> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let alive: Vec<u32> = pids.iter().copied().filter(|&p| image_path(p).is_some()).collect();
+        if alive.is_empty() || std::time::Instant::now() >= deadline {
+            return alive;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+}
+
 /// File version resource strings (CompanyName, ProductName, FileDescription).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -527,6 +565,27 @@ mod tests {
         assert!(vi.company.as_deref().unwrap_or("").contains("Microsoft"));
         assert!(terminate(4, r"C:\x.exe").is_err());
         assert!(terminate(std::process::id(), r"C:\x.exe").is_err());
+    }
+
+    #[test]
+    fn asks_a_window_to_close_without_forcing() {
+        let exe = format!(r"{}\System32\notepad.exe", crate::system::windows_dir());
+        let Ok(mut child) = std::process::Command::new(&exe).spawn() else { return };
+        let pid = child.id();
+        // Wait for its window to exist.
+        let mut asked = 0;
+        for _ in 0..50 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            asked = request_close(pid);
+            if asked > 0 {
+                break;
+            }
+        }
+        assert!(asked > 0, "a visible window was asked to close");
+        assert!(wait_for_exit(&[pid], std::time::Duration::from_secs(5)).is_empty(), "closed on its own, without being killed");
+        let _ = child.wait();
+        // A process without windows is simply left alone.
+        assert_eq!(request_close(std::process::id()), 0);
     }
 
     #[test]

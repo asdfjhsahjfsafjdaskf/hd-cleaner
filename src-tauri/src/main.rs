@@ -130,6 +130,7 @@ fn main() {
             commands::system::startup_impact,
             commands::cleaner::cleaner_analyze,
             commands::cleaner::cleaner_analyze_admin,
+            commands::cleaner::cleaner_close_program,
             commands::cleaner::cleaner_items,
             commands::cleaner::cleaner_run,
             commands::system::target_pick,

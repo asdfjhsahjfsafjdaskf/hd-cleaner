@@ -270,6 +270,96 @@ fn firefox_profiles() -> Vec<(PathBuf, Option<PathBuf>)> {
         .collect()
 }
 
+/// Installed programs, read once per run (used to name discovered caches and
+/// to know which executable belongs to them).
+fn installed_index() -> &'static Vec<(String, String, Option<String>)> {
+    static INDEX: std::sync::OnceLock<Vec<(String, String, Option<String>)>> = std::sync::OnceLock::new();
+    INDEX.get_or_init(|| {
+        crate::programs::registry_programs()
+            .into_iter()
+            .filter(|p| !p.system_component && !p.is_update)
+            .map(|p| {
+                let exe = p.icon.as_deref().and_then(crate::programs::parse_icon_ref).map(|(path, _)| path).filter(|p| p.to_lowercase().ends_with(".exe"));
+                (crate::appsize::norm(&p.name), p.name.clone(), exe)
+            })
+            .filter(|(n, _, _)| n.len() >= 3)
+            .collect()
+    })
+}
+
+/// Folders inside AppData that are caches of some program.
+const CACHE_DIRS: &[&str] = &["Cache", "Code Cache", "GPUCache", "CachedData", "GrShaderCache", "ShaderCache", "Cache_Data", "blob_storage"];
+/// AppData folders that belong to Windows, to the browsers already covered
+/// above, or that are not caches at all.
+const SKIP_APPDATA: &[&str] = &[
+    "microsoft", "packages", "temp", "programs", "google", "bravesoftware", "mozilla", "opera software", "vivaldi", "chromium", "discord", "discordptb",
+    "discordcanary", "spotify", "steam", "code", "hdcleaner", "nvidia", "amd", "intel", "d3dscache", "crashdumps", "connecteddevicesplatform", "comms",
+    "publishers", "windows", "elevateddiagnostics", "iconcache", "application data", "history", "cookies",
+    // This application itself (WebView2 data of the current and former name).
+    "app.hdcleaner.desktop", "app.nexuscleaner.desktop",
+];
+
+/// Cache folders of programs that are not in the fixed list above: any
+/// `%AppData%\<app>\Cache`-style folder, named after the installed program
+/// when one matches.
+fn discovered_app_caches(covered: &std::collections::HashSet<String>) -> Vec<Category> {
+    let mut out: Vec<Category> = Vec::new();
+    for base in [env("APPDATA"), env("LOCALAPPDATA")].into_iter().flatten() {
+        let Ok(rd) = std::fs::read_dir(&base) else { continue };
+        for e in rd.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_dir())) {
+            let folder = e.file_name().to_string_lossy().to_string();
+            if SKIP_APPDATA.contains(&folder.to_lowercase().as_str()) {
+                continue;
+            }
+            // Cache folders directly inside, or one level deeper (Electron apps).
+            let mut roots: Vec<PathBuf> = CACHE_DIRS.iter().map(|c| e.path().join(c)).filter(|p| p.is_dir()).collect();
+            if let Ok(sub) = std::fs::read_dir(e.path()) {
+                for s in sub.flatten().filter(|s| s.file_type().is_ok_and(|t| t.is_dir())).take(40) {
+                    roots.extend(CACHE_DIRS.iter().map(|c| s.path().join(c)).filter(|p| p.is_dir()));
+                }
+            }
+            roots.retain(|p| {
+                let l = s(p).to_lowercase();
+                let already = covered.iter().any(|c| l == *c || l.starts_with(&format!("{c}\\")));
+                // Empty cache folders would only add noise to the list.
+                let has_content = std::fs::read_dir(p).map(|mut d| d.next().is_some()).unwrap_or(false);
+                !already && has_content
+            });
+            if roots.is_empty() {
+                continue;
+            }
+            // Name it after the installed program when one matches the folder.
+            let norm = crate::appsize::norm(&folder);
+            let program = installed_index().iter().find(|(n, _, _)| *n == norm || n.starts_with(&norm) && norm.len() >= 4);
+            let mut procs = vec![format!("{folder}.exe")];
+            if let Some((_, _, Some(exe))) = program {
+                if let Some(name) = exe.rsplit('\\').next() {
+                    if !procs.iter().any(|p| p.eq_ignore_ascii_case(name)) {
+                        procs.push(name.to_string());
+                    }
+                }
+            }
+            let key: String = folder.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase();
+            if key.is_empty() || out.iter().any(|c| c.id == format!("app.{key}")) {
+                continue;
+            }
+            let mut rules: Vec<Rule> = roots.into_iter().map(dir).collect();
+            dedup_rules(&mut rules);
+            // An installed program with this name: treat it like the known
+            // apps. Otherwise the folder alone is a weaker signal, so the
+            // category is shown but not pre-selected.
+            let (risk, on) = if program.is_some() { (Risk::Safe, true) } else { (Risk::Review, false) };
+            let mut c = cat(&format!("app.{key}"), Group::Apps, "appCache", Risk::Review, on, rules);
+            c.risk = risk;
+            c.owner = Some(program.map(|(_, name, _)| name.clone()).unwrap_or(folder));
+            c.processes = procs;
+            out.push(c);
+        }
+    }
+    out.sort_by(|a, b| a.owner.cmp(&b.owner));
+    out
+}
+
 /// Every category that applies to this computer.
 pub fn catalog() -> Vec<Category> {
     let mut out = Vec::new();
@@ -499,6 +589,14 @@ pub fn catalog() -> Vec<Category> {
         c.special = Some(Special::RegistryMru { keys });
         c
     };
+    // Caches of any other program with an AppData cache folder.
+    let covered: std::collections::HashSet<String> = out.iter().flat_map(|c| c.rules.iter().map(|r| r.root().to_lowercase())).collect();
+    let discovered = discovered_app_caches(&covered);
+    let apps_end = out.iter().rposition(|c| c.group == Group::Apps).map(|i| i + 1).unwrap_or(out.len());
+    for (i, c) in discovered.into_iter().enumerate() {
+        out.insert(apps_end + i, c);
+    }
+
     out.push(mru("privacy.runMru", "runMru", vec![RUN_MRU.into()]));
     out.push(mru("privacy.typedPaths", "typedPaths", vec![TYPED_PATHS.into()]));
     let office = office_mru_keys();
@@ -702,6 +800,35 @@ pub fn is_running(c: &Category, procs: &[crate::processes::ProcInfo]) -> bool {
         c.processes.iter().any(|n| n.eq_ignore_ascii_case(&p.name))
             && c.process_path_hint.as_ref().is_none_or(|h| p.path.as_deref().is_some_and(|x| x.to_lowercase().contains(h.as_str())))
     })
+}
+
+/// Processes of the browser/app a category belongs to.
+pub fn running_processes(c: &Category, procs: &[crate::processes::ProcInfo]) -> Vec<crate::processes::ProcInfo> {
+    procs
+        .iter()
+        .filter(|p| {
+            c.processes.iter().any(|n| n.eq_ignore_ascii_case(&p.name))
+                && c.process_path_hint.as_ref().is_none_or(|h| p.path.as_deref().is_some_and(|x| x.to_lowercase().contains(h.as_str())))
+        })
+        .cloned()
+        .collect()
+}
+
+/// Ask the category's program to close (like clicking its X) and wait a
+/// little. Nothing is forced: a program with unsaved work stays open and is
+/// reported back to the caller.
+pub fn close_program(id: &str, wait: std::time::Duration) -> Result<Vec<crate::processes::ProcInfo>> {
+    let c = catalog().into_iter().find(|c| c.id == id).ok_or_else(|| AppError::NotFound { path: format!("cleaner category {id}") })?;
+    if c.processes.is_empty() {
+        return Err(AppError::NotSupported("this category has no program to close".into()));
+    }
+    let running = running_processes(&c, &crate::processes::list());
+    let pids: Vec<u32> = running.iter().map(|p| p.pid).collect();
+    for pid in &pids {
+        crate::processes::request_close(*pid);
+    }
+    let still = crate::processes::wait_for_exit(&pids, wait);
+    Ok(running.into_iter().filter(|p| still.contains(&p.pid)).collect())
 }
 
 /// SID of the current user (its Recycle Bin folder is named after it).
