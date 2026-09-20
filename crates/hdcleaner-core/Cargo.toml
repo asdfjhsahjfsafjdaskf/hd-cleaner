@@ -1,0 +1,25 @@
+[package]
+name = "hdcleaner-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core system services for HD Cleaner: disk scanning, search, treemap, protection, file operations."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+rayon.workspace = true
+parking_lot.workspace = true
+blake3.workspace = true
+rusqlite.workspace = true
+lz4_flex.workspace = true
+windows-sys.workspace = true
+windows.workspace = true
+png.workspace = true
+# Enables the blocking `get()` on WinRT async operations used by windows.
+windows-future = "0.3"
+
+[dev-dependencies]
+tempfile = "3"

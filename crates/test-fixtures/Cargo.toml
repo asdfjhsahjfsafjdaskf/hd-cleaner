@@ -1,0 +1,20 @@
+[package]
+name = "test-fixtures"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Fake programs used to test the uninstaller and leftover scanner (never shipped)."
+
+[[bin]]
+name = "hdcleaner-fake-app"
+path = "src/main.rs"
+
+[dependencies]
+windows-sys.workspace = true
+windows.workspace = true
+
+[dev-dependencies]
+hdcleaner-core.workspace = true
+tempfile = "3"
+rusqlite.workspace = true

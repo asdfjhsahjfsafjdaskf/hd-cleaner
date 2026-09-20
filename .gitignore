@@ -1,0 +1,16 @@
+# Build output
+node_modules/
+dist/
+target/
+src-tauri/gen/schemas/
+
+# Scan snapshots and partial files written by the app
+*.hdcs
+*.nxs
+*.partial
+
+# Local editor / OS files
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

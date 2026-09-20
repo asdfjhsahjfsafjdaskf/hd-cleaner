@@ -1,0 +1,10 @@
+pub mod app;
+pub mod cleaner;
+pub mod files;
+pub mod forced;
+pub mod programs;
+pub mod scan;
+pub mod search;
+pub mod system;
+pub mod tree;
+pub mod uninstall;
