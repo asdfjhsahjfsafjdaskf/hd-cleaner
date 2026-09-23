@@ -255,7 +255,8 @@ async fn remove_many(
     dry_run: bool,
 ) -> CmdResult<Vec<(u32, RemovalSummary)>> {
     // 1. Per session, everything that can be done without elevation.
-    let mut per: Vec<(u32, Vec<Leftover>, std::path::PathBuf, Vec<RemovalResult>, Vec<(u32, leftovers::PendingOp)>)> = Vec::new();
+    type Session = (u32, Vec<Leftover>, std::path::PathBuf, Vec<RemovalResult>, Vec<(u32, leftovers::PendingOp)>, Vec<hdcleaner_core::backups::Entry>);
+    let mut per: Vec<Session> = Vec::new();
     for sel in selections {
         let (items, backup_dir) = {
             let s = session(state, sel.session_id)?;
@@ -266,12 +267,12 @@ async fn remove_many(
             continue;
         }
         let (bd, its) = (backup_dir.clone(), items.clone());
-        let (results, pending) = tauri::async_runtime::spawn_blocking(move || {
-            leftovers::remove(&its, &RemovalOptions { backup_dir: &bd, recycle, allow_dangerous, dry_run })
+        let removal = tauri::async_runtime::spawn_blocking(move || {
+            leftovers::remove(&its, &RemovalOptions { backup_dir: &bd, recycle, allow_dangerous, dry_run, quarantine: true })
         })
         .await
         .map_err(|e| AppError::Helper(e.to_string()).to_payload())?;
-        per.push((sel.session_id, items, backup_dir, results, pending));
+        per.push((sel.session_id, items, backup_dir, removal.results, removal.pending, removal.saved));
     }
     if per.is_empty() {
         return Err(AppError::InvalidInput("nothing selected".into()).to_payload());
@@ -280,7 +281,7 @@ async fn remove_many(
     // 2. One elevated helper run for all pending operations of all sessions.
     let ops: Vec<ElevatedOp> = per
         .iter()
-        .flat_map(|(_, _, _, _, pending)| pending.iter().map(|(_, op)| ElevatedOp::Removal { item: op.clone() }))
+        .flat_map(|(_, _, _, _, pending, _)| pending.iter().map(|(_, op)| ElevatedOp::Removal { item: op.clone() }))
         .collect();
     let outcome = if ops.is_empty() {
         Ok(Vec::new())
@@ -293,7 +294,7 @@ async fn remove_many(
     // 3. Merge results back per session; manifests and session bookkeeping.
     let mut index = 0usize;
     let mut out = Vec::new();
-    for (session_id, items, backup_dir, mut results, pending) in per {
+    for (session_id, items, backup_dir, mut results, pending, saved) in per {
         let elevated_count = pending.len();
         for (id, _) in &pending {
             let path = items.iter().find(|l| l.id == *id).map(|l| l.path.clone()).unwrap_or_default();
@@ -313,11 +314,16 @@ async fn remove_many(
             results.push(r);
             index += 1;
         }
+        if !dry_run && !saved.is_empty() {
+            // The manifest is what the Backups page reads to restore this.
+            let program = items.first().map(|_| ()).and(session(state, session_id).ok().map(|s| s.program.name.clone()));
+            let mut manifest = hdcleaner_core::backups::Manifest::new("uninstall", program.as_deref().unwrap_or("uninstall"));
+            manifest.entries = saved;
+            if let Err(e) = manifest.save(&backup_dir) {
+                tracing::warn!("backup manifest not written: {e}");
+            }
+        }
         if !dry_run {
-            // Manifest next to the backup, for the Backups page (Phase 11).
-            let _ = hdcleaner_core::util::ensure_dir(&backup_dir);
-            let manifest = serde_json::json!({ "items": items, "results": results });
-            let _ = std::fs::write(backup_dir.join("manifest.json"), serde_json::to_vec_pretty(&manifest).unwrap_or_default());
             if let Ok(mut s) = session(state, session_id) {
                 s.removed.extend(results.iter().cloned());
             }

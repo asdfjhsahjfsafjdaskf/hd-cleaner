@@ -187,6 +187,17 @@ pub async fn cleaner_run(app: AppHandle, ids: Vec<String>, dry_run: bool, on_eve
         }
         let removed = results.iter().filter_map(|r| r.outcome.as_ref()).map(|o| o.removed).sum();
         let freed = results.iter().filter_map(|r| r.outcome.as_ref()).map(|o| o.freed).sum();
+        // A manifest makes the backup usable from the Backups page.
+        let saved: Vec<hdcleaner_core::backups::Entry> =
+            results.iter().filter_map(|r| r.outcome.as_ref()).flat_map(|o| o.saved.iter().cloned()).collect();
+        if !saved.is_empty() {
+            let label = chosen.iter().map(|c| c.category.id.as_str()).collect::<Vec<_>>().join(", ");
+            let mut manifest = hdcleaner_core::backups::Manifest::new("cleanup", &label.chars().take(120).collect::<String>());
+            manifest.entries = saved;
+            if let Err(e) = manifest.save(&backup) {
+                tracing::warn!("backup manifest not written: {e}");
+            }
+        }
         let backup_dir = backup.exists().then(|| backup.to_string_lossy().to_string());
         if let Some(op) = op {
             let failed = results.iter().filter(|r| r.error.is_some()).count();

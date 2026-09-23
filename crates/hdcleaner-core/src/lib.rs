@@ -6,6 +6,7 @@
 
 pub mod appsize;
 pub mod appx;
+pub mod backups;
 pub mod bootperf;
 pub mod branding;
 pub mod category;

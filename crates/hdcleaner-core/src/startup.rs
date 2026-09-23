@@ -462,26 +462,46 @@ pub fn remove(item: &StartupItem, backup_dir: &Path) -> Result<Option<PendingOp>
         return Err(AppError::Protected { path: item.name.clone(), reason: if item.is_windows { "windowsComponent".into() } else { "notRemovable".into() } });
     }
     crate::util::ensure_dir(backup_dir)?;
+    let mut manifest = crate::backups::Manifest::new("startup", &item.name);
     let op = match &item.source {
         Source::RunKey { hive, view, .. } => {
             let key_path = item.location.split_once('\\').map(|(_, p)| p.trim_end_matches(" [32-bit]").to_string()).unwrap_or_default();
             let target = RegTarget { hive: *hive, path: key_path, view: *view, value: Some(item.key.clone()) };
             crate::regops::export(std::slice::from_ref(&target), &backup_dir.join("startup.reg"))?;
+            manifest.entries.push(crate::backups::Entry {
+                kind: crate::backups::EntryKind::Registry,
+                path: target.display(),
+                stored: Some("startup.reg".into()),
+                size: 0,
+            });
             PendingOp::DeleteRegistry { target }
         }
         Source::StartupFolder { .. } => {
             let name = Path::new(&item.key).file_name().map(|n| n.to_owned()).unwrap_or_default();
-            std::fs::copy(&item.key, backup_dir.join(&name)).map_err(|e| AppError::io("backing up startup file", Some(Path::new(&item.key)), e))?;
+            let size = std::fs::copy(&item.key, backup_dir.join(&name)).map_err(|e| AppError::io("backing up startup file", Some(Path::new(&item.key)), e))?;
+            manifest.entries.push(crate::backups::Entry {
+                kind: crate::backups::EntryKind::File,
+                path: item.key.clone(),
+                stored: Some(name.to_string_lossy().into_owned()),
+                size,
+            });
             PendingOp::DeletePath { path: item.key.clone(), recycle: true }
         }
         Source::Task => {
             let xml = crate::sysitems::task_xml(&item.key)?;
             let file = backup_dir.join(format!("{}.xml", safe_file_name(&item.name)));
-            std::fs::write(&file, xml).map_err(|e| AppError::io("backing up task", Some(&file), e))?;
+            std::fs::write(&file, &xml).map_err(|e| AppError::io("backing up task", Some(&file), e))?;
+            manifest.entries.push(crate::backups::Entry {
+                kind: crate::backups::EntryKind::Task,
+                path: item.key.clone(),
+                stored: file.file_name().map(|n| n.to_string_lossy().into_owned()),
+                size: xml.len() as u64,
+            });
             PendingOp::DeleteTask { path: item.key.clone() }
         }
         Source::Service => return Err(AppError::NotSupported("services are only disabled, never removed".into())),
     };
+    manifest.save(backup_dir)?;
     let r = match &op {
         PendingOp::DeleteRegistry { target } if target.hive == Hive::LocalMachine && !crate::system::is_elevated() => return Ok(Some(op)),
         PendingOp::DeletePath { .. } if item.needs_admin && !crate::system::is_elevated() => return Ok(Some(op)),

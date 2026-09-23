@@ -1,6 +1,6 @@
 # HD Cleaner — Status do projeto
 
-**Atualizado em 19/09/2026**, ao final da Fase 10 (monitor de instalação).
+**Atualizado em 23/09/2026**, ao final da Fase 11 (backups, quarentena e restauração).
 
 Este arquivo registra **tudo o que já foi feito** e **tudo o que ainda falta**, seguindo as seções da especificação original. Nenhuma funcionalidade listada aqui como feita é simulada: todas foram compiladas, testadas por testes automatizados e, quando indicado, verificadas no app real, nesta máquina.
 
@@ -17,7 +17,7 @@ Documentos relacionados:
 |---|---|
 | Stack | Rust 1.98 (MSVC) + Tauri 2 + React 19 + TypeScript + Vite |
 | Estrutura | `crates/hdcleaner-core` (toda a lógica) · `crates/hdcleaner-cli` (binário `hdcleaner`) · `crates/test-fixtures` (programa falso de teste) · `src-tauri` (camada de comandos) · `src` (interface) |
-| Testes automatizados | **89 testes Rust + 7 testes de ponta a ponta (desinstalação normal, forçada, inicialização, árvore de processos, limpeza em sandbox, Lixeira e monitor de instalação) passando**. Os testes destrutivos usam apenas pastas temporárias ou o programa falso de teste (sob o perfil do usuário) |
+| Testes automatizados | **93 testes Rust + 7 testes de ponta a ponta (desinstalação normal, forçada, inicialização, árvore de processos, limpeza em sandbox, Lixeira e monitor de instalação) passando**. Os testes destrutivos usam apenas pastas temporárias ou o programa falso de teste (sob o perfil do usuário) |
 | Tipagem do frontend | `tsc --noEmit` sem erros |
 | Build de release | `hd-cleaner.exe` com 13,4 MB (sem instalador). Instaladores NSIS/MSI ainda não foram gerados |
 | Controle de versão | A pasta **não é um repositório git** e nenhum commit foi feito |
@@ -332,6 +332,19 @@ Os dados locais ficam em `%LOCALAPPDATA%\HDCleaner`:
 - **Testes:** `monitor_flow` (retrato → observação → instalação de verdade → comparação; confere pastas, arquivos, chaves e valor de inicialização criados, o programa identificado, o ruído de outro programa marcado como não relacionado, ida e volta pelo banco e as sobras geradas pelo rastro — incluindo uma que as regras sozinhas não encontram e a ausência de duplicatas).
 - **Corrigido durante a verificação:** a espera pelo desinstalador adotava processos alheios (o Windows mantém o PID do pai mesmo depois que ele morre e reaproveita PIDs) e ficava presa; agora um processo só entra na árvore se tiver começado **depois** do desinstalador, e PIDs que já morreram saem da lista. Também: o assistente mostrava uma janela vazia quando o preparo falhava, e o preparo não recarregava a lista de programas quando ela estava velha.
 
+### Fase 11 — Backups, quarentena e restauração
+
+- **Quarentena:** ao remover sobras, arquivos e pastas de até 16 MB (no máximo 256 MB por operação) são **copiados para o backup antes** de serem apagados — links e junções nunca são copiados, e se a remoção não acontecer a cópia é descartada. Assim a remoção deixa de ser um caminho sem volta mesmo quando a Lixeira não é usada.
+- **Manifesto:** toda operação destrutiva grava um `backup.json` com o tipo (desinstalação, forçada, limpeza, inicialização), o rótulo, a data e a lista do que foi salvo, com o **caminho de origem** de cada item. É isso que torna a restauração possível.
+- **Restaurar do Registro:** `regops::import` lê o `.reg` que o próprio app exportou (UTF-16, `dword:`, `hex(N):`, linhas continuadas) e regrava os valores. Só escreve o que o app teria permissão de **apagar** — a mesma allowlist —, então um arquivo editado à mão não vira um caminho para escrever em qualquer lugar do Registro; diretivas de exclusão (`[-HKEY…]`) são ignoradas, porque restaurar nunca remove nada. Teste automatizado: exporta, apaga, restaura e confere valor a valor, e recusa um `.reg` apontando para `Policies`.
+- **Página Backups:** lista data, tipo, rótulo, número de itens, tamanho e quantos podem voltar; **Inspecionar** mostra item a item o que está guardado, e **Restaurar** devolve os selecionados. **Nada é sobrescrito**: um item cujo caminho original existe de novo é deixado como está e aparece como "já existe". Também dá para abrir a pasta do backup e excluir o backup.
+- **Backups antigos** (gravados antes do manifesto) continuam visíveis: o app lê o `manifest.json` da versão anterior para mostrar o que aquela operação removeu e restaura as exportações do Registro; os arquivos daquela época não foram copiados, então aparecem marcados como sem cópia.
+- **Ponto de restauração antes de limpezas grandes:** a confirmação da Limpeza oferece criar um ponto de restauração, **já marcado** quando a seleção passa de 2 GB ou inclui categoria perigosa/de administrador. Se o Windows recusar (Proteção do Sistema desligada, ou um ponto criado há poucos minutos), a limpeza **não acontece** e o erro é mostrado.
+- **Histórico:** restaurar, excluir backup e criar ponto de restauração entram no journal (`restore`, `backup-delete`, `restore-point`).
+- **Segurança:** um id de backup só pode apontar para uma pasta filha direta de `backups` (`..`, caminhos absolutos e separadores são recusados — com teste).
+- **Verificado na tela:** app de teste instalado, desinstalado pelo backend do app (7 sobras removidas, quarentena gravada com 645 KB), e a página Backups restaurou os 7 itens — pastas do AppData, atalho e as duas entradas do Registro — com o `settings.json` de volta no lugar certo; restaurar de novo respondeu "já existe" sem sobrescrever. O backup foi excluído pela própria tela.
+- **Testes:** ida e volta da quarentena (salvar, restaurar, recusar sobrescrita, excluir), leitura de pasta antiga sem manifesto, id que tenta sair da pasta de backups, import/export do Registro, e o `uninstall_flow` agora vai até restaurar o que foi removido de um programa de verdade.
+
 ### Recursos das fases 11 e 12 adiantados
 
 - **Exclusão segura:**
@@ -407,16 +420,7 @@ Durante o teste da categoria "Temporários do Windows", a limpeza real foi execu
 Legenda: 🔴 não iniciado · 🟡 parcial
 
 
-### Fase 11 — Backups 🟡 (próxima)
-
-- Já existe: o journal de operações, o dry run, o uso da Lixeira, o **backup .reg + manifest.json** antes de remover sobras e o **ponto de restauração** opcional.
-- Falta:
-  - área de **quarentena** para arquivos pequenos e configurações;
-  - **ponto de restauração** antes de operações grandes;
-  - **página Backups** com data, operação, programa, itens, tamanho e tipo, e as ações Restaurar, Inspecionar e Excluir backup;
-  - operação de restauração registrada no histórico.
-
-### Fase 12 — CLI, exportação e snapshots 🟡
+### Fase 12 — CLI, exportação e snapshots 🟡 (próxima)
 
 - Já existe: a maior parte (veja acima).
 - Falta:

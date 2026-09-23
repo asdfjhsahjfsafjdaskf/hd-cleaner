@@ -58,7 +58,7 @@ fn forced_uninstall_of_broken_program() {
 
     let backup = std::env::temp_dir().join(format!("hdc-forced-test-{}", std::process::id()));
     let chosen: Vec<_> = found.into_iter().filter(|l| l.preselected).collect();
-    let (results, pending) = leftovers::remove(&chosen, &RemovalOptions { backup_dir: &backup, recycle: false, allow_dangerous: false, dry_run: false });
+    let leftovers::Removal { results, pending, .. } = leftovers::remove(&chosen, &RemovalOptions { backup_dir: &backup, recycle: false, allow_dangerous: false, dry_run: false, quarantine: true });
     assert!(pending.is_empty(), "{pending:?}");
     assert!(results.iter().all(|r| r.status == "removed"), "{results:?}");
     assert!(!hdcleaner_core::uninstall::still_installed(&target), "orphan uninstall entry removed");

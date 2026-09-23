@@ -781,8 +781,13 @@ impl LeftoverStep {
         }
         let chosen: Vec<_> = found.into_iter().filter(|l| l.preselected).collect();
         let backup = hdcleaner_core::util::app_data_dir().join("backups").join(format!("cli-{}", hdcleaner_core::util::now_unix_ms()));
-        let (results, pending) =
-            leftovers::remove(&chosen, &RemovalOptions { backup_dir: &backup, recycle: true, allow_dangerous: true, dry_run });
+        let leftovers::Removal { results, pending, saved } =
+            leftovers::remove(&chosen, &RemovalOptions { backup_dir: &backup, recycle: true, allow_dangerous: true, dry_run, quarantine: true });
+        if !saved.is_empty() {
+            let mut manifest = hdcleaner_core::backups::Manifest::new("uninstall", &prog.name);
+            manifest.entries = saved;
+            let _ = manifest.save(&backup);
+        }
         for r in &results {
             println!("  {:<12} {}", r.status, r.path);
         }

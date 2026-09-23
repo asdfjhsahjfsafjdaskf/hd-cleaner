@@ -64,6 +64,7 @@ export function Cleaner() {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [dryRun, setDryRun] = useState(app.settings.dryRunDefault);
   const [confirming, setConfirming] = useState(false);
+  const [restorePoint, setRestorePoint] = useState(false);
   const [running, setRunning] = useState<string>();
   const [report, setReport] = useState<CleanReport>();
 
@@ -112,6 +113,8 @@ export function Cleaner() {
   const byId = useMemo(() => new Map((cats ?? []).map((c) => [c.category.id, c])), [cats]);
   const chosen = useMemo(() => [...selected].map((id) => byId.get(id)).filter((c): c is CategorySummary => !!c), [selected, byId]);
   const totalBytes = chosen.reduce((a, c) => a + c.bytes, 0);
+  // A big or risky cleanup is where a restore point earns its minute.
+  const big = totalBytes >= 2 * 1024 ** 3 || chosen.some((c) => c.category.risk === "dangerous" || c.category.admin);
 
   const toggle = (id: string) =>
     setSelected((s) => {
@@ -126,6 +129,19 @@ export function Cleaner() {
     setBusy(true);
     setError(undefined);
     try {
+      if (restorePoint && !dryRun) {
+        setRunning(t("cleaner.creatingRestorePoint"));
+        try {
+          await api.createRestorePoint(t("backups.restorePointName"));
+        } catch (e) {
+          // Windows refuses when System Protection is off, or one was just
+          // made: say so and let the user decide, without cleaning anything.
+          setError(toError(e));
+          setRunning(undefined);
+          setBusy(false);
+          return;
+        }
+      }
       const r = await api.cleanerRun([...selected], dryRun, (e) => {
         if (e.event === "category") setRunning(e.data.id);
       });
@@ -161,7 +177,7 @@ export function Cleaner() {
         {cats?.some((c) => c.adminPending) && (
           <button className="btn" disabled={busy} onClick={() => void analyzeAdmin()}><ShieldAlert size={14} />{t("cleaner.analyzeAdmin")}</button>
         )}
-        <button className="btn danger" disabled={busy || selected.size === 0} onClick={() => setConfirming(true)}>
+        <button className="btn danger" disabled={busy || selected.size === 0} onClick={() => { setRestorePoint(big || app.settings.createRestorePoint); setConfirming(true); }}>
           <Trash2 size={14} />{t("cleaner.clean")}
         </button>
       </div>
@@ -294,6 +310,12 @@ export function Cleaner() {
             </div>
           )}
           {chosen.some((c) => c.category.admin) && <div className="muted">{t("cleaner.adminNote")}</div>}
+          {!dryRun && (
+            <label className="checkbox">
+              <input type="checkbox" checked={restorePoint} onChange={(e) => setRestorePoint(e.target.checked)} />
+              <span>{t("cleaner.restorePoint")}{big && ` — ${t("cleaner.restorePointBig")}`}</span>
+            </label>
+          )}
           <div className="row" style={{ justifyContent: "space-between", fontWeight: 600 }}>
             <span>{t("programs.total")}</span>
             <span>{formatBytes(totalBytes)}</span>

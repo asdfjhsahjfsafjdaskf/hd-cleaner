@@ -6,7 +6,7 @@ import type {
   ErrorPayload, NodeDetails, NodeRow, OperationRecord, Page, ScanEvent, ScanMeta, ScanMethod, ScanRecord,
   ScanStats, SearchSummary, SortKey, ToolInfo, Assessment, ItemResult, Program, AppSize, Identification, SizesEvent,
   PreparedUninstall, RunEvent, Leftover, LeftoverLevel, RemovalSummary, ForcedTarget, ForcedChoice, ProcInfo,
-  ProcessRow, ProcessDetails, TreeKill, StartupItem, TargetPicked, StartupImpact, CategorySummary, CleanItem, CleanEvent, CleanReport, InstallTrace, MonitorStatus,
+  ProcessRow, ProcessDetails, TreeKill, StartupItem, TargetPicked, StartupImpact, CategorySummary, CleanItem, CleanEvent, CleanReport, InstallTrace, MonitorStatus, BackupSet, BackupManifest, RestoreResult,
 } from "../types";
 
 export function isErrorPayload(e: unknown): e is ErrorPayload {
@@ -144,6 +144,12 @@ export const api = {
   traceDelete: (id: number) => invoke<boolean>("trace_delete", { id }),
   traceExport: (id: number, path: string) => invoke<number>("trace_export", { id, path }),
   traceImport: (path: string, suffix: string) => invoke<InstallTrace>("trace_import", { path, suffix }),
+
+  backupsList: () => invoke<BackupSet[]>("backups_list"),
+  backupRead: (id: string) => invoke<BackupManifest>("backup_read", { id }),
+  backupRestore: (id: string, indexes: number[]) => invoke<RestoreResult[]>("backup_restore", { id, indexes }),
+  backupDelete: (id: string) => invoke<void>("backup_delete", { id }),
+  createRestorePoint: (description: string) => invoke<void>("create_restore_point", { description }),
 
   cleanerAnalyze: () => invoke<CategorySummary[]>("cleaner_analyze"),
   cleanerAnalyzeAdmin: () => invoke<CategorySummary[]>("cleaner_analyze_admin"),

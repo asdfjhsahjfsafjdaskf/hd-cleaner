@@ -526,6 +526,17 @@ pub struct RemovalOptions<'a> {
     pub recycle: bool,
     pub allow_dangerous: bool,
     pub dry_run: bool,
+    /// Copy small files and folders into the backup before removing them, so
+    /// the Backups page can put them back.
+    pub quarantine: bool,
+}
+
+/// What a removal did: the per-item result, the items that need the elevated
+/// helper, and what was saved into the backup folder.
+pub struct Removal {
+    pub results: Vec<RemovalResult>,
+    pub pending: Vec<(u32, PendingOp)>,
+    pub saved: Vec<crate::backups::Entry>,
 }
 
 pub fn needs_elevation(e: &AppError) -> bool {
@@ -536,9 +547,11 @@ pub fn needs_elevation(e: &AppError) -> bool {
 /// `backup_dir\registry.reg` first; files go to the Recycle Bin when
 /// `recycle`. Items refused for lack of rights are returned as pending
 /// elevated operations (the caller batches them into one UAC prompt).
-pub fn remove(items: &[Leftover], opts: &RemovalOptions) -> (Vec<RemovalResult>, Vec<(u32, PendingOp)>) {
+pub fn remove(items: &[Leftover], opts: &RemovalOptions) -> Removal {
+    use crate::backups::{Entry, EntryKind};
     let mut results = Vec::new();
     let mut pending = Vec::new();
+    let mut saved: Vec<Entry> = Vec::new();
     let res = |l: &Leftover, status: &'static str, error: Option<ErrorPayload>| RemovalResult { id: l.id, path: l.path.clone(), status, error };
 
     let regs: Vec<RegTarget> = items.iter().filter_map(|l| l.reg.clone()).collect();
@@ -548,9 +561,13 @@ pub fn remove(items: &[Leftover], opts: &RemovalOptions) -> (Vec<RemovalResult>,
             for l in items.iter().filter(|l| l.reg.is_some()) {
                 results.push(res(l, "failed", Some(e.to_payload())));
             }
-            return (results, pending);
+            return Removal { results, pending, saved };
+        }
+        for l in items.iter().filter(|l| l.reg.is_some()) {
+            saved.push(Entry { kind: EntryKind::Registry, path: l.path.clone(), stored: Some("registry.reg".into()), size: 0 });
         }
     }
+    let mut budget = crate::backups::QUARANTINE_TOTAL_LIMIT;
 
     for l in items {
         if opts.dry_run {
@@ -574,6 +591,12 @@ pub fn remove(items: &[Leftover], opts: &RemovalOptions) -> (Vec<RemovalResult>,
                     results.push(res(l, "skipped", Some(AppError::Protected { path: l.path.clone(), reason: "dangerousNotConfirmed".into() }.to_payload())));
                     continue;
                 }
+                // Saved first: after the delete there is nothing left to copy.
+                let quarantined = if opts.quarantine && !opts.dry_run {
+                    crate::backups::quarantine(Path::new(&l.path), opts.backup_dir, saved.len(), &mut budget)
+                } else {
+                    None
+                };
                 let mode = if opts.recycle { crate::fsops::DeleteMode::RecycleBin } else { crate::fsops::DeleteMode::Permanent };
                 let plan = crate::fsops::plan_delete(&[(l.path.clone(), None)], mode);
                 if plan.items.is_empty() {
@@ -586,7 +609,18 @@ pub fn remove(items: &[Leftover], opts: &RemovalOptions) -> (Vec<RemovalResult>,
                     |_, _| {},
                     || true,
                 );
-                match r.into_iter().next().map(|x| x.outcome) {
+                let outcome = r.into_iter().next().map(|x| x.outcome);
+                if let Some((stored, size)) = quarantined {
+                    if matches!(outcome, Some(crate::fsops::ItemOutcome::Deleted)) {
+                        let kind = if l.kind == LeftoverKind::Folder { EntryKind::Folder } else { EntryKind::File };
+                        saved.push(Entry { kind, path: l.path.clone(), stored: Some(stored), size });
+                    } else {
+                        // Nothing was removed: the copy would only take space.
+                        let _ = std::fs::remove_dir_all(opts.backup_dir.join(&stored));
+                        let _ = std::fs::remove_file(opts.backup_dir.join(&stored));
+                    }
+                }
+                match outcome {
                     Some(crate::fsops::ItemOutcome::Deleted) => results.push(res(l, "removed", None)),
                     Some(crate::fsops::ItemOutcome::Failed { error }) if error.kind == "notFound" => results.push(res(l, "removed", None)),
                     Some(crate::fsops::ItemOutcome::Failed { error }) if error.kind == "accessDenied" => {
@@ -621,7 +655,7 @@ pub fn remove(items: &[Leftover], opts: &RemovalOptions) -> (Vec<RemovalResult>,
             }
         }
     }
-    (results, pending)
+    Removal { results, pending, saved }
 }
 
 /// Execute one pending operation (inside the elevated helper). Every check is

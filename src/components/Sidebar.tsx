@@ -39,7 +39,7 @@ const GROUPS: { title?: string; items: Item[]; action?: boolean }[] = [
   {
     title: "nav.groupSystem",
     items: [
-      { id: "backups", icon: <Archive size={17} />, notImplemented: true },
+      { id: "backups", icon: <Archive size={17} /> },
       { id: "history", icon: <History size={17} /> },
       { id: "tools", icon: <Wrench size={17} /> },
       { id: "settings", icon: <Settings size={17} /> },

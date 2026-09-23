@@ -18,6 +18,7 @@ import { History } from "./pages/History";
 import { LargeFiles } from "./pages/LargeFiles";
 import { NotImplemented } from "./pages/NotImplemented";
 import { Cleaner } from "./pages/Cleaner";
+import { Backups } from "./pages/Backups";
 import { Monitor } from "./pages/Monitor";
 import { Processes } from "./pages/Processes";
 import { Programs } from "./pages/Programs";
@@ -104,6 +105,7 @@ export default function App() {
       case "startup": content = <Startup />; break;
       case "processes": content = <Processes />; break;
       case "monitor": content = <Monitor />; break;
+      case "backups": content = <Backups />; break;
       case "history": content = <History />; break;
       case "tools": content = <Tools />; break;
       case "settings": content = <Settings />; break;

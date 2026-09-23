@@ -643,3 +643,45 @@ export interface MonitorStatus {
   baseline: number;
   seen: number;
 }
+
+// ---- backups ----------------------------------------------------------------
+
+export type BackupEntryKind = "file" | "folder" | "registry" | "task";
+
+export interface BackupEntry {
+  kind: BackupEntryKind;
+  /** Where it came from (a path, or the registry target). */
+  path: string;
+  /** File inside the backup folder holding the saved copy. */
+  stored?: string | null;
+  size: number;
+}
+
+export interface BackupSet {
+  id: string;
+  path: string;
+  createdMs: number;
+  kind: string;
+  label: string;
+  entries: number;
+  bytes: number;
+  restorable: number;
+  /** Written before backups had a manifest: less is known about it. */
+  legacy: boolean;
+}
+
+export interface BackupManifest {
+  version: number;
+  kind: string;
+  label: string;
+  createdMs: number;
+  entries: BackupEntry[];
+}
+
+export interface RestoreResult {
+  index: number;
+  path: string;
+  status: "restored" | "partial" | "exists" | "unknownOrigin" | "missing" | "failed";
+  values?: number | null;
+  error?: ErrorPayload | null;
+}

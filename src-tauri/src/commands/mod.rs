@@ -1,4 +1,5 @@
 pub mod app;
+pub mod backups;
 pub mod cleaner;
 pub mod files;
 pub mod forced;

@@ -236,6 +236,210 @@ pub fn export(targets: &[RegTarget], file: &std::path::Path) -> Result<usize> {
     Ok(n)
 }
 
+// ---- .reg import (restoring a backup) ---------------------------------------
+
+#[derive(Debug, Default, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportReport {
+    /// Keys that were created or opened to write into.
+    pub keys: usize,
+    pub values: usize,
+    /// Values left alone, with the reason: outside the allowlist, a deletion
+    /// directive, or a line this reader does not understand.
+    pub skipped: Vec<String>,
+}
+
+fn decode_reg_file(raw: &[u8]) -> Result<String> {
+    if raw.starts_with(&[0xFF, 0xFE]) {
+        let units: Vec<u16> = raw[2..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        return String::from_utf16(&units).map_err(|_| AppError::Corrupt("registry backup is not valid UTF-16".into()));
+    }
+    let start = if raw.starts_with(&[0xEF, 0xBB, 0xBF]) { 3 } else { 0 };
+    String::from_utf8(raw[start..].to_vec()).map_err(|_| AppError::Corrupt("registry backup is not valid text".into()))
+}
+
+fn unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut it = s.chars();
+    while let Some(c) = it.next() {
+        if c == '\\' {
+            if let Some(n) = it.next() {
+                out.push(n);
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+fn parse_hive(name: &str) -> Option<Hive> {
+    match name.to_ascii_uppercase().as_str() {
+        "HKEY_LOCAL_MACHINE" | "HKLM" => Some(Hive::LocalMachine),
+        "HKEY_CURRENT_USER" | "HKCU" => Some(Hive::CurrentUser),
+        _ => None,
+    }
+}
+
+/// `"name"="text"`, `@=dword:0000002a`, `"b"=hex(7):61,00,…` → the raw value.
+fn parse_value(text: &str) -> Option<(u32, Vec<u8>)> {
+    if let Some(rest) = text.strip_prefix('"') {
+        let end = {
+            let mut i = 0;
+            let b: Vec<char> = rest.chars().collect();
+            loop {
+                if i >= b.len() {
+                    return None;
+                }
+                if b[i] == '\\' {
+                    i += 2;
+                    continue;
+                }
+                if b[i] == '"' {
+                    break i;
+                }
+                i += 1;
+            }
+        };
+        let s: String = rest.chars().take(end).collect();
+        let mut data: Vec<u8> = unescape(&s).encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+        data.extend_from_slice(&[0, 0]);
+        return Some((REG_SZ, data));
+    }
+    if let Some(hex) = text.strip_prefix("dword:") {
+        let n = u32::from_str_radix(hex.trim(), 16).ok()?;
+        return Some((REG_DWORD, n.to_le_bytes().to_vec()));
+    }
+    let (ty, body) = if let Some(rest) = text.strip_prefix("hex(") {
+        let (t, r) = rest.split_once("):")?;
+        (u32::from_str_radix(t.trim(), 16).ok()?, r)
+    } else {
+        (REG_BINARY, text.strip_prefix("hex:")?)
+    };
+    let mut data = Vec::new();
+    for part in body.split(',') {
+        let p = part.trim();
+        if p.is_empty() {
+            continue;
+        }
+        data.push(u8::from_str_radix(p, 16).ok()?);
+    }
+    Some((ty, data))
+}
+
+fn write_value(t: &RegTarget, ty: u32, data: &[u8]) -> Result<()> {
+    let pw = wide(&t.path);
+    let mut h: HKEY = std::ptr::null_mut();
+    let rc = unsafe {
+        RegCreateKeyExW(t.hive.raw(), pw.as_ptr(), 0, std::ptr::null(), 0, KEY_SET_VALUE | view_flag(t.view), std::ptr::null(), &mut h, std::ptr::null_mut())
+    };
+    if rc != ERROR_SUCCESS {
+        return Err(reg_err(rc, "creating registry key", t));
+    }
+    struct Close(HKEY);
+    impl Drop for Close {
+        fn drop(&mut self) {
+            unsafe { RegCloseKey(self.0) };
+        }
+    }
+    let _c = Close(h);
+    let Some(name) = &t.value else { return Ok(()) };
+    let nw = wide(name);
+    let name_ptr = if name.is_empty() { std::ptr::null() } else { nw.as_ptr() };
+    let rc = unsafe { RegSetValueExW(h, name_ptr, 0, ty, data.as_ptr(), data.len() as u32) };
+    if rc != ERROR_SUCCESS {
+        return Err(reg_err(rc, "writing registry value", t));
+    }
+    Ok(())
+}
+
+/// Restore a `.reg` backup written by [`export`].
+///
+/// Only what this app is allowed to delete may be written back, so a hand
+/// edited (or foreign) file cannot turn a restore into a way to write
+/// anywhere in the registry. Deletion directives (`[-HKEY…]`) are ignored:
+/// restoring never removes anything.
+pub fn import(file: &std::path::Path) -> Result<ImportReport> {
+    let raw = std::fs::read(file).map_err(|e| AppError::io("reading registry backup", Some(file), e))?;
+    if raw.len() > 64 * 1024 * 1024 {
+        return Err(AppError::InvalidInput("registry backup too large".into()));
+    }
+    let text = decode_reg_file(&raw)?;
+    let mut report = ImportReport::default();
+    let mut current: Option<(Hive, String, View)> = None;
+    let mut keys_written: Vec<String> = Vec::new();
+
+    // Physical `WOW6432Node` paths are written to the 32-bit view with the
+    // marker removed, so the value lands where it came from.
+    let key_target = |hive: Hive, path: &str| -> (String, View) {
+        let low = path.to_lowercase();
+        match low.find("wow6432node\\") {
+            Some(i) if hive == Hive::LocalMachine => (format!("{}{}", &path[..i], &path[i + "wow6432node\\".len()..]), View::Reg32),
+            _ => (path.to_string(), View::Default),
+        }
+    };
+
+    let mut lines: Vec<String> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim_end();
+        match lines.last_mut() {
+            // A line ending in `\` continues on the next one (long hex values).
+            Some(prev) if prev.ends_with('\\') && !prev.ends_with("\\\\") => {
+                prev.pop();
+                prev.push_str(line.trim_start());
+            }
+            _ => lines.push(line.to_string()),
+        }
+    }
+
+    for line in lines {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with(';') || line.starts_with("Windows Registry Editor") || line.starts_with("REGEDIT") {
+            continue;
+        }
+        if let Some(inner) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+            if let Some(del) = inner.strip_prefix('-') {
+                report.skipped.push(format!("{del} (deletion in the backup file)"));
+                current = None;
+                continue;
+            }
+            match inner.split_once('\\').and_then(|(h, p)| parse_hive(h).map(|hive| (hive, p))) {
+                Some((hive, path)) => {
+                    let (path, view) = key_target(hive, path);
+                    current = Some((hive, path, view));
+                }
+                None => {
+                    report.skipped.push(inner.to_string());
+                    current = None;
+                }
+            }
+            continue;
+        }
+        let Some((hive, path, view)) = current.clone() else { continue };
+        let Some((raw_name, raw_value)) = line.split_once('=') else {
+            report.skipped.push(line.to_string());
+            continue;
+        };
+        let name = if raw_name.trim() == "@" { String::new() } else { unescape(raw_name.trim().trim_matches('"')) };
+        let target = RegTarget { hive, path: path.clone(), view, value: Some(name.clone()) };
+        if let Err(reason) = deletion_allowed(&target) {
+            report.skipped.push(format!("{} ({reason})", target.display()));
+            continue;
+        }
+        let Some((ty, data)) = parse_value(raw_value.trim()) else {
+            report.skipped.push(format!("{} (value not understood)", target.display()));
+            continue;
+        };
+        write_value(&target, ty, &data)?;
+        report.values += 1;
+        if !keys_written.contains(&path) {
+            keys_written.push(path);
+            report.keys += 1;
+        }
+    }
+    Ok(report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,5 +504,35 @@ mod tests {
         delete(&target).unwrap();
         assert!(!key_exists(Hive::CurrentUser, &root, View::Default));
         delete(&target).unwrap(); // already gone: still Ok
+
+        // Restoring the backup puts the values back exactly as they were.
+        let report = import(&file).unwrap();
+        assert_eq!(report.values, 2, "{report:?}");
+        assert!(report.skipped.is_empty(), "{report:?}");
+        let k = Key::open(Hive::CurrentUser, &format!(r"{path}\Sub"), View::Default).expect("the subkey is back");
+        assert_eq!(k.string("Greeting").as_deref(), Some("olá \"mundo\""));
+        assert_eq!(k.dword("Answer"), Some(42));
+        delete(&target).unwrap();
+    }
+
+    #[test]
+    fn import_refuses_what_deletion_refuses() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("evil.reg");
+        let text = r#"Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies]
+"Anything"=dword:00000001
+
+[-HKEY_CURRENT_USER\Software\Whatever]
+"#;
+        let mut bytes = vec![0xFF, 0xFE];
+        for u in text.encode_utf16() {
+            bytes.extend_from_slice(&u.to_le_bytes());
+        }
+        std::fs::write(&file, bytes).unwrap();
+        let report = import(&file).unwrap();
+        assert_eq!(report.values, 0);
+        assert_eq!(report.skipped.len(), 2, "{report:?}");
     }
 }

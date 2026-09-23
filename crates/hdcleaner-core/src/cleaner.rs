@@ -136,6 +136,9 @@ pub struct CleanOutcome {
     pub denied: u64,
     pub failed: u64,
     pub errors: Vec<String>,
+    /// What went into the backup folder and can be restored from it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub saved: Vec<crate::backups::Entry>,
 }
 
 impl CleanOutcome {
@@ -147,6 +150,7 @@ impl CleanOutcome {
         self.denied += o.denied;
         self.failed += o.failed;
         self.errors.extend(o.errors);
+        self.saved.extend(o.saved);
         self.errors.truncate(50);
     }
 }
@@ -1051,7 +1055,7 @@ fn by_database<'a>(items: &'a [CleanItem], tag: &str) -> std::collections::BTree
 }
 
 /// A consistent copy of a SQLite database, made before changing it.
-fn backup_database(db: &str, backup_dir: &Path) -> Result<()> {
+fn backup_database(db: &str, backup_dir: &Path) -> Result<std::path::PathBuf> {
     crate::util::ensure_dir(backup_dir)?;
     let name: String = Path::new(db)
         .parent()
@@ -1069,8 +1073,8 @@ fn backup_database(db: &str, backup_dir: &Path) -> Result<()> {
     }
     let conn = rusqlite::Connection::open(db).map_err(|e| AppError::Corrupt(format!("{db}: {e}")))?;
     conn.execute("VACUUM INTO ?1", [dest.to_string_lossy().to_string()])
-        .map(|_| ())
-        .map_err(|e| AppError::Corrupt(format!("backing up {db}: {e}")))
+        .map_err(|e| AppError::Corrupt(format!("backing up {db}: {e}")))?;
+    Ok(dest)
 }
 
 /// Remove visits (and the pages left without visits and without bookmarks).
@@ -1081,11 +1085,25 @@ fn clear_firefox(items: &[CleanItem], tag: &str, backup_dir: &Path, dry_run: boo
             o.removed += ids.len() as u64;
             continue;
         }
-        if let Err(e) = backup_database(db, backup_dir) {
-            // Without a backup nothing is touched.
-            o.failed += ids.len() as u64;
-            o.errors.push(e.to_string());
-            continue;
+        let copy = match backup_database(db, backup_dir) {
+            Ok(dest) => dest,
+            Err(e) => {
+                // Without a backup nothing is touched.
+                o.failed += ids.len() as u64;
+                o.errors.push(e.to_string());
+                continue;
+            }
+        };
+        // The whole database is in the backup: restoring puts the history
+        // (and the bookmarks that came with it) back as it was.
+        let stored = copy.file_name().map(|n| n.to_string_lossy().into_owned());
+        if !o.saved.iter().any(|e| e.path.eq_ignore_ascii_case(db)) {
+            o.saved.push(crate::backups::Entry {
+                kind: crate::backups::EntryKind::File,
+                path: db.to_string(),
+                size: std::fs::metadata(&copy).map(|m| m.len()).unwrap_or(0),
+                stored,
+            });
         }
         let r = (|| -> rusqlite::Result<usize> {
             let mut conn = rusqlite::Connection::open(db)?;
@@ -1380,6 +1398,12 @@ fn clear_mru(items: &[CleanItem], backup_dir: &Path, dry_run: bool) -> CleanOutc
         o.errors.push(e.to_string());
         return o;
     }
+    o.saved.push(crate::backups::Entry {
+        kind: crate::backups::EntryKind::Registry,
+        path: format!("{} ({} values)", targets[0].path, targets.len()),
+        stored: Some("recent-lists.reg".into()),
+        size: 0,
+    });
     for (key, value) in list {
         let (k, v) = (wide(&key), wide(&value));
         let rc = unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, k.as_ptr(), v.as_ptr()) };

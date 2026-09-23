@@ -111,6 +111,10 @@ pub fn now_unix_ms() -> i64 {
         .unwrap_or(0)
 }
 
+pub fn system_time_to_unix_ms(t: std::time::SystemTime) -> i64 {
+    t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
+}
+
 /// RAII wrapper that closes a Win32 handle.
 pub struct OwnedHandle(pub HANDLE);
 

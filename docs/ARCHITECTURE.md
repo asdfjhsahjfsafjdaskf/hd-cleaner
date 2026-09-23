@@ -39,6 +39,7 @@ Windows APIs (windows-sys / windows-rs), sistema de arquivos, Registro
 | `fsops` | Plano de exclusão com *fingerprint* → reverificação → Lixeira (`IFileOperation`) ou permanente; renomear sem sobrescrever; abrir, Explorer, propriedades, terminal |
 | `elevation` | Helper elevado de superfície mínima via UAC + named pipe (`scan-ntfs`, `apply-ops` com operações tipadas e revalidadas) |
 | `uninstall`, `leftovers`, `regops`, `shortcuts`, `sysitems` | Desinstalador oficial com espera da árvore de processos; motor de sobras; backup .reg + allowlist de exclusão no Registro; alvos de .lnk; Run/serviços/tarefas |
+| `backups` | O que foi salvo antes de remover: manifesto, quarentena, restauração (nunca sobrescreve) e exclusão |
 | `monitor` | Retrato do sistema antes/depois de uma instalação + `ReadDirectoryChangesW` durante ela; o rastro marca o que é do programa e o que é ruído de outro |
 | `db` | SQLite: settings, operações (journal), scans/snapshots, rastros de instalação |
 | `diff`, `export`, `stats`, `tools`, `registry`, `disk`, `system` | Comparação de snapshots, CSV/JSON, agregações, atalhos do Windows, leitura do Registro, unidades, token/SO |
@@ -111,7 +112,7 @@ Legenda: ✅ implementado e testado · 🟡 parcial · ⛔ não implementado (ma
 | Windows Apps (23), extensões de navegador (24) | ⛔ | |
 | Target Mode (25), gerenciador de processos (26), inicialização (27) | ✅ | `target.rs` (camada de mira + moldura, UWP via ApplicationFrameHost), `processes.rs` (amostragem de CPU, dono, árvore reverificada), `startup.rs` (StartupApproved/tarefa/serviço; remover com backup). `bootperf.rs` (impacto medido pelo Windows, log Diagnostics-Performance via helper); ícones da bandeja no Windows 10 (Windows 11: não suportado) |
 | Monitor de instalação, traces (28–29) | ✅ | `monitor.rs`: retrato antes/depois (pastas até 12 níveis, Registro nas áreas relevantes, serviços, tarefas, programas) + `ReadDirectoryChangesW` durante a instalação; comparação gera o rastro, que separa o que é do programa do que outro programa escreveu no mesmo período. Rastros no banco (`install_traces`, `install_trace_files`, `install_trace_registry`), com exportar/importar/excluir; `leftovers::from_trace` alimenta a desinstalação (só itens relacionados, sem duplicar as regras) |
-| Backups/quarentena/ponto de restauração (30) | ⛔ | |
+| Backups/quarentena/ponto de restauração (30) | ✅ | `backups.rs`: manifesto por operação, quarentena de arquivos pequenos antes da remoção, listagem, restauração que nunca sobrescreve e exclusão; `regops::import` devolve valores do Registro sob a mesma allowlist da exclusão. Ponto de restauração oferecido antes de limpezas grandes; restaurações vão para o histórico |
 | Cleaner, browser cleaner, itens recentes (31–33) | ✅ | `cleaner.rs`: catálogo de categorias, análise que só lista, limpeza restrita aos itens analisados e inalterados, junções nunca seguidas, temporários só com mais de 24 h, app/navegador aberto bloqueia, backup .reg das listas do Registro, categorias do Windows analisadas e limpas pelo helper. Firefox: histórico e downloads removidos linha a linha do places.sqlite (favoritos mantidos, banco copiado antes); Lixeira item a item com o caminho original; caches de aplicativos descobertos automaticamente; botão para fechar o programa aberto (WM_CLOSE, nunca forçado) |
 | Ferramentas do Windows (34) | ✅ | |
 | Secure delete, wipe de espaço livre (35–36) | ⛔ | |
@@ -141,5 +142,5 @@ Dados locais: `%LOCALAPPDATA%\HDCleaner` (`hdcleaner.db`, `logs\`, `snapshots\`)
 
 ## 6. Próximos passos (roteiro)
 
-1. Fase 11: quarentena e página de Backups (backup .reg e ponto de restauração já existem).
+1. Fase 12: relatório HTML, Timeline de snapshots e `cleanup --analyze` na CLI.
 2. Monitoramento incremental (`ReadDirectoryChangesW`/USN Journal) e colunas de duplicados na file view.
