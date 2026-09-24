@@ -895,7 +895,7 @@ fn recycled_info(meta: &Path) -> Option<(String, u64)> {
         }
         _ => return None,
     };
-    let units: Vec<u16> = name.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+    let units: Vec<u16> = name.as_chunks::<2>().0.iter().map(|&c| u16::from_le_bytes(c)).collect();
     let end = units.iter().position(|&c| c == 0).unwrap_or(units.len());
     Some((String::from_utf16_lossy(&units[..end]), size))
 }

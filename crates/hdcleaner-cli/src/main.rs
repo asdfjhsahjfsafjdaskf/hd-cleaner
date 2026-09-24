@@ -302,7 +302,7 @@ fn run(cli: Cli) -> Result<()> {
             } else {
                 println!("{:<5} {:<8} {:<10} {:<8} {:>12} {:>12} {:>6}  LABEL", "DRIVE", "FS", "TYPE", "MEDIA", "TOTAL", "FREE", "USED");
                 for d in drives {
-                    let pct = if d.total_bytes > 0 { d.used_bytes * 100 / d.total_bytes } else { 0 };
+                    let pct = (d.used_bytes * 100).checked_div(d.total_bytes).unwrap_or(0);
                     println!(
                         "{:<5} {:<8} {:<10} {:<8} {:>12} {:>12} {:>5}%  {}",
                         d.root,
@@ -672,15 +672,15 @@ not enough snapshots to show a change");
                 .collect();
             match sort.as_str() {
                 "cpu" => rows.sort_by(|a, b| b.cpu.unwrap_or(0.0).total_cmp(&a.cpu.unwrap_or(0.0))),
-                "name" => rows.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
-                "memory" => rows.sort_by(|a, b| b.private_bytes.cmp(&a.private_bytes)),
+                "name" => rows.sort_by_key(|a| a.name.to_lowercase()),
+                "memory" => rows.sort_by_key(|r| std::cmp::Reverse(r.private_bytes)),
                 other => bail!("unknown sort {other} (memory|cpu|name)"),
             }
             rows.truncate(top);
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&rows)?);
             } else {
-                println!("{:>7} {:>6} {:>10}  {:<28} {:<22} {}", "PID", "CPU%", "MEMORY", "NAME", "USER", "PUBLISHER");
+                println!("{:>7} {:>6} {:>10}  {:<28} {:<22} PUBLISHER", "PID", "CPU%", "MEMORY", "NAME", "USER");
                 for r in &rows {
                     println!(
                         "{:>7} {:>6.1} {:>10}  {:<28} {:<22} {}",

@@ -69,9 +69,9 @@ pub fn compute(tree: &ScanTree, scope: NodeId, top_extensions: usize) -> ScanSta
         b.key = HIST[i].0.to_string();
     }
     cats.retain(|b| b.files > 0);
-    cats.sort_by(|a, b| b.alloc.cmp(&a.alloc));
+    cats.sort_by_key(|b| std::cmp::Reverse(b.alloc));
     exts.retain(|b| b.files > 0);
-    exts.sort_by(|a, b| b.alloc.cmp(&a.alloc));
+    exts.sort_by_key(|b| std::cmp::Reverse(b.alloc));
     exts.truncate(top_extensions);
     ScanStats { categories: cats, extensions: exts, histogram: hist }
 }

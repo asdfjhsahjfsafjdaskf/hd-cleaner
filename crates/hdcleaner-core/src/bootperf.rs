@@ -203,8 +203,8 @@ pub fn report_from_xml<'a>(events: impl IntoIterator<Item = &'a str>) -> BootRep
             s
         })
         .collect();
-    slowdowns.sort_by(|a, b| b.avg_delay_ms.cmp(&a.avg_delay_ms));
-    boots.sort_by(|a, b| b.time_ms.cmp(&a.time_ms));
+    slowdowns.sort_by_key(|s| std::cmp::Reverse(s.avg_delay_ms));
+    boots.sort_by_key(|b| std::cmp::Reverse(b.time_ms));
     BootReport { boots, slowdowns }
 }
 

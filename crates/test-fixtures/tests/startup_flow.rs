@@ -74,7 +74,7 @@ fn disable_enable_and_remove_user_startup_entries() {
             assert!(backup.join(format!("{name}.lnk")).is_file(), "shortcut copied to the backup");
         } else {
             let reg = std::fs::read(backup.join("startup.reg")).unwrap();
-            let text = String::from_utf16_lossy(&reg[2..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect::<Vec<_>>());
+            let text = String::from_utf16_lossy(&reg[2..].as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes([c[0], c[1]])).collect::<Vec<_>>());
             assert!(text.contains(&name), "backup .reg holds the Run value");
         }
         let _ = std::fs::remove_dir_all(&backup);

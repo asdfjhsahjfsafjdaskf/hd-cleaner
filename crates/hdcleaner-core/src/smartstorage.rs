@@ -288,7 +288,7 @@ pub fn cache_owners(programs: &[Program], evidence: &Evidence, analysis: &[crate
             signals: owner.map(|m| m.signals).unwrap_or_default(),
         });
     }
-    out.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+    out.sort_by_key(|c| std::cmp::Reverse(c.bytes));
     out
 }
 

@@ -151,7 +151,7 @@ pub fn parse_record(rec: &[u8]) -> Option<ParsedRecord> {
                         let ns = v[0x41];
                         if let Some(raw) = v.get(0x42..0x42 + n * 2) {
                             let units: Vec<u16> =
-                                raw.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+                                raw.as_chunks::<2>().0.iter().map(|&c| u16::from_le_bytes(c)).collect();
                             out.names.push(FileName {
                                 parent,
                                 namespace: ns,

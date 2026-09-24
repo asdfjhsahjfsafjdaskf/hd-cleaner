@@ -147,7 +147,7 @@ fn memory(h: windows_sys::Win32::Foundation::HANDLE) -> Option<(u64, u64)> {
     let mut m: PROCESS_MEMORY_COUNTERS_EX = unsafe { std::mem::zeroed() };
     m.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32;
     let ok = unsafe { K32GetProcessMemoryInfo(h, (&mut m as *mut PROCESS_MEMORY_COUNTERS_EX).cast::<PROCESS_MEMORY_COUNTERS>(), m.cb) } != 0;
-    ok.then(|| (m.PrivateUsage as u64, m.WorkingSetSize as u64))
+    ok.then_some((m.PrivateUsage as u64, m.WorkingSetSize as u64))
 }
 
 /// Owner account (`DOMAIN\user`) of a process, cached per SID.
@@ -534,7 +534,7 @@ pub fn version_info(path: &str) -> VersionInfo {
             (0x0409, 0x04b0)
         };
         let get = |key: &str| -> Option<String> {
-            let q = wide(&format!(r"\StringFileInfo\{lang:04x}{cp:04x}\{key}"));
+            let q = wide(format!(r"\StringFileInfo\{lang:04x}{cp:04x}\{key}"));
             let mut p: *mut std::ffi::c_void = std::ptr::null_mut();
             let mut l = 0u32;
             if VerQueryValueW(data.as_ptr().cast(), q.as_ptr(), &mut p, &mut l) == 0 || l == 0 {
@@ -601,5 +601,6 @@ mod tests {
         // A wrong expected path is refused (PID reuse protection).
         assert!(matches!(terminate(child.id(), r"C:\Other\app.exe"), Err(AppError::ChangedSinceReview { .. })));
         let _ = child.kill();
+        let _ = child.wait(); // reaped, so the test leaves nothing behind
     }
 }

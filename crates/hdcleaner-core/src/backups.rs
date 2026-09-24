@@ -206,7 +206,7 @@ pub fn list(root: &Path) -> Vec<BackupSet> {
             legacy: m.version < 2,
         });
     }
-    out.sort_by(|a, b| b.created_ms.cmp(&a.created_ms));
+    out.sort_by_key(|b| std::cmp::Reverse(b.created_ms));
     out
 }
 

@@ -310,7 +310,7 @@ impl Database {
         let mut stmt = self
             .conn
             .prepare("SELECT id, name, program_id, program_name, started_ms, finished_ms, services, tasks, bytes FROM install_traces ORDER BY started_ms DESC LIMIT ?1")?;
-        let rows = stmt.query_map(params![limit as i64], |r| Self::trace_row(r))?;
+        let rows = stmt.query_map(params![limit as i64], Self::trace_row)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
@@ -319,7 +319,7 @@ impl Database {
         let mut stmt = self
             .conn
             .prepare("SELECT id, name, program_id, program_name, started_ms, finished_ms, services, tasks, bytes FROM install_traces WHERE id = ?1")?;
-        let mut t = stmt.query_row(params![id], |r| Self::trace_row(r)).map_err(|_| crate::AppError::NotFound { path: format!("trace {id}") })?;
+        let mut t = stmt.query_row(params![id], Self::trace_row).map_err(|_| crate::AppError::NotFound { path: format!("trace {id}") })?;
         let mut f = self.conn.prepare("SELECT path, size, transient, related FROM install_trace_files WHERE trace_id = ?1 ORDER BY path")?;
         t.files = f
             .query_map(params![id], |r| {
@@ -339,7 +339,7 @@ impl Database {
             "SELECT id, name, program_id, program_name, started_ms, finished_ms, services, tasks, bytes FROM install_traces
              WHERE program_id = ?1 OR program_name = ?2 COLLATE NOCASE OR name = ?2 COLLATE NOCASE ORDER BY started_ms DESC",
         )?;
-        let rows = stmt.query_map(params![program_id, program_name], |r| Self::trace_row(r))?;
+        let rows = stmt.query_map(params![program_id, program_name], Self::trace_row)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 

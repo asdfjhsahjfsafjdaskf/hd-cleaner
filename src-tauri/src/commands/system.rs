@@ -13,9 +13,7 @@ use std::sync::Arc;
 use tauri::ipc::Response;
 use tauri::{AppHandle, Manager};
 
-fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> impl std::future::Future<Output = CmdResult<T>> {
-    async move { tauri::async_runtime::spawn_blocking(f).await.map_err(|e| AppError::Helper(e.to_string()).to_payload()) }
-}
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> CmdResult<T> { tauri::async_runtime::spawn_blocking(f).await.map_err(|e| AppError::Helper(e.to_string()).to_payload()) }
 
 // ---------------------------------------------------------------------------
 // Processes

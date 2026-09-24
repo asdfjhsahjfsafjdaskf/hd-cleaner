@@ -151,7 +151,7 @@ pub fn caches_of(p: &Program, analysis: &[CategoryResult]) -> Vec<RelatedCache> 
             admin: r.category.admin,
         })
         .collect();
-    out.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+    out.sort_by_key(|c| std::cmp::Reverse(c.bytes));
     out
 }
 

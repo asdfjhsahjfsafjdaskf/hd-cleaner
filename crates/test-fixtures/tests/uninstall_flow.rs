@@ -81,7 +81,7 @@ fn uninstall_then_leftovers_then_clean() {
     assert!(!std::path::Path::new(prog.install_location.as_deref().unwrap()).exists());
     assert!(!hdcleaner_core::regops::key_exists(hdcleaner_core::registry::Hive::CurrentUser, r"Software\HdcFakeVendor", hdcleaner_core::registry::View::Default));
     let reg_backup = std::fs::read(backup.join("registry.reg")).unwrap();
-    let text = String::from_utf16_lossy(&reg_backup[2..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect::<Vec<_>>());
+    let text = String::from_utf16_lossy(&reg_backup[2..].as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes([c[0], c[1]])).collect::<Vec<_>>());
     assert!(text.contains("HdcFakeVendor") && text.contains("InstallDir"), "registry backup written before deletion");
 
     // 7. The backup holds what was removed, and restores it where it was.

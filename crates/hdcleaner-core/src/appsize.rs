@@ -181,7 +181,7 @@ pub fn candidates(p: &Program, roots: &Roots) -> Vec<Candidate> {
         for (root, kind, names) in &roots.roots {
             for dir in names {
                 let n = norm(dir);
-                if keys.iter().any(|k| *k == n) {
+                if keys.contains(&n) {
                     out.push(Candidate { path: format!(r"{root}\{dir}"), kind: *kind, confidence: Confidence::Possible, reason: "folderNameMatchesProgram" });
                 } else if publisher.as_ref().is_some_and(|pb| *pb == n || pb.starts_with(&n) && n.len() >= 4) {
                     // Publisher folder: look one level down for the product.

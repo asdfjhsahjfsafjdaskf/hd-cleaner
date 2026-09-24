@@ -165,7 +165,7 @@ fn value_line(name: &str, ty: u32, data: &[u8]) -> String {
     let n = if name.is_empty() { "@".to_string() } else { format!("\"{}\"", escape(name)) };
     let v = match ty {
         REG_SZ => {
-            let units: Vec<u16> = data.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+            let units: Vec<u16> = data.as_chunks::<2>().0.iter().map(|&c| u16::from_le_bytes(c)).collect();
             let end = units.iter().position(|&c| c == 0).unwrap_or(units.len());
             format!("\"{}\"", escape(&String::from_utf16_lossy(&units[..end])))
         }
@@ -251,7 +251,7 @@ pub struct ImportReport {
 
 fn decode_reg_file(raw: &[u8]) -> Result<String> {
     if raw.starts_with(&[0xFF, 0xFE]) {
-        let units: Vec<u16> = raw[2..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let units: Vec<u16> = raw[2..].as_chunks::<2>().0.iter().map(|&c| u16::from_le_bytes(c)).collect();
         return String::from_utf16(&units).map_err(|_| AppError::Corrupt("registry backup is not valid UTF-16".into()));
     }
     let start = if raw.starts_with(&[0xEF, 0xBB, 0xBF]) { 3 } else { 0 };
@@ -492,9 +492,9 @@ mod tests {
         let target = t(Hive::CurrentUser, &root, None);
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("b.reg");
-        assert_eq!(export(&[target.clone()], &file).unwrap(), 1);
+        assert_eq!(export(std::slice::from_ref(&target), &file).unwrap(), 1);
         let raw = std::fs::read(&file).unwrap();
-        let units: Vec<u16> = raw[2..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let units: Vec<u16> = raw[2..].as_chunks::<2>().0.iter().map(|&c| u16::from_le_bytes(c)).collect();
         let text = String::from_utf16(&units).unwrap();
         assert!(text.starts_with("Windows Registry Editor Version 5.00"));
         assert!(text.contains(r#""Greeting"="olá \"mundo\"""#));

@@ -241,15 +241,13 @@ impl MftContent {
         for (number, p) in batch.infos {
             let owner = p.base.map(|b| b as usize).unwrap_or(number as usize);
             let Some(info) = self.infos.get_mut(owner) else { continue };
-            if p.base.is_none() {
-                if p.in_use {
-                    info.flags |= RI_IN_USE;
-                    if p.is_dir {
-                        info.flags |= RI_DIR;
-                        dirs += 1;
-                    } else {
-                        files += 1;
-                    }
+            if p.base.is_none() && p.in_use {
+                info.flags |= RI_IN_USE;
+                if p.is_dir {
+                    info.flags |= RI_DIR;
+                    dirs += 1;
+                } else {
+                    files += 1;
                 }
             }
             if p.has_std_info {
@@ -462,14 +460,13 @@ impl FileSystemScanner for NtfsFastScanner {
                         let mut buf = std::mem::take(&mut carry);
                         let start = buf.len();
                         buf.resize(start + take as usize, 0);
-                        match run.lcn {
-                            Some(lcn) => {
-                                if let Err(e) = read_at(vol, lcn * cluster + done, &mut buf[start..]) {
-                                    let _ = tx.send(Err(e));
-                                    break 'outer;
-                                }
+                        // A sparse run is zeros: nothing to read, and those
+                        // records are rejected later anyway.
+                        if let Some(lcn) = run.lcn {
+                            if let Err(e) = read_at(vol, lcn * cluster + done, &mut buf[start..]) {
+                                let _ = tx.send(Err(e));
+                                break 'outer;
                             }
-                            None => {} // sparse run: zeros, records will be rejected
                         }
                         done += take;
                         let usable = (buf.len() as u64).min(remaining + start as u64) as usize;

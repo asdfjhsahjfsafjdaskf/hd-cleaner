@@ -94,7 +94,7 @@ impl Ctx {
 
     fn name_matches(&self, name: &str) -> bool {
         let n = norm(name);
-        n.len() >= 3 && self.keys.iter().any(|k| *k == n)
+        n.len() >= 3 && self.keys.contains(&n)
     }
 
     #[allow(clippy::too_many_arguments)]

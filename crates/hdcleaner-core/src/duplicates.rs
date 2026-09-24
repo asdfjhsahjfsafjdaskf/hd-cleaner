@@ -187,7 +187,7 @@ pub fn find_duplicates(tree: &ScanTree, opts: &DupOptions, ctl: &ScanControl) ->
     for g in groups.iter_mut() {
         g.2.sort_by(|&a, &b| tree.node(a).modified.cmp(&tree.node(b).modified).then(a.cmp(&b)));
     }
-    groups.sort_by(|a, b| (b.0 * (b.2.len() as u64 - 1)).cmp(&(a.0 * (a.2.len() as u64 - 1))));
+    groups.sort_by_key(|g| std::cmp::Reverse(g.0 * (g.2.len() as u64 - 1)));
     for (i, (size, hash, files)) in groups.into_iter().enumerate() {
         let wasted = size * (files.len() as u64 - 1);
         report.total_wasted += wasted;

@@ -185,7 +185,7 @@ fn read_body(r: &mut impl Read) -> Result<ScanTree> {
         return Err(AppError::Corrupt("child index size mismatch".into()));
     }
     let raw = rd(r, children_len * 4)?;
-    let children: Vec<u32> = raw.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect();
+    let children: Vec<u32> = raw.as_chunks::<4>().0.iter().map(|&c| u32::from_le_bytes(c)).collect();
     let ext_count = u32r(r)? as usize;
     if ext_count == 0 || ext_count > u16::MAX as usize + 1 {
         return Err(AppError::Corrupt("invalid extension table".into()));

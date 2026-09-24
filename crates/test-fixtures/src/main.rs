@@ -182,8 +182,11 @@ fn main() {
         // A parent process with one child (for "end process tree").
         Some("spawn-tree") => {
             let me = std::env::current_exe().unwrap();
-            let _child = std::process::Command::new(me).arg("--tray").spawn().unwrap();
+            let mut child = std::process::Command::new(me).arg("--tray").spawn().unwrap();
             std::thread::sleep(std::time::Duration::from_secs(120));
+            // The test kills this tree; reaping keeps no zombie behind if not.
+            let _ = child.kill();
+            let _ = child.wait();
         }
         // A shortcut in the user's Startup folder.
         Some("startup-link") => {

@@ -275,7 +275,7 @@ pub fn list(nexus_disabled_services: &[String]) -> Vec<StartupItem> {
             command: e.command,
             exe_exists: false,
             exe: e.exe,
-            enabled: approved.map_or(true, |a| a.0),
+            enabled: approved.is_none_or(|a| a.0),
             disabled_at_ms: approved.and_then(|a| a.1),
             can_disable: !once,
             can_remove: !is_windows,
@@ -313,7 +313,7 @@ pub fn list(nexus_disabled_services: &[String]) -> Vec<StartupItem> {
                 exe_exists: false,
                 is_windows: false,
                 exe,
-                enabled: approved.map_or(true, |a| a.0),
+                enabled: approved.is_none_or(|a| a.0),
                 disabled_at_ms: approved.and_then(|a| a.1),
                 can_disable: true,
                 can_remove: true,
@@ -392,7 +392,7 @@ pub fn list(nexus_disabled_services: &[String]) -> Vec<StartupItem> {
             }
         }
     });
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|i| i.name.to_lowercase());
     out
 }
 

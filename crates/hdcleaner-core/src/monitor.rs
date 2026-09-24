@@ -271,7 +271,7 @@ fn watch_loop(raw: isize, base: PathBuf, stop: Arc<AtomicBool>, seen: Arc<Mutex<
             if start + len > returned as usize {
                 break;
             }
-            let units: Vec<u16> = buf[start..start + len].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+            let units: Vec<u16> = buf[start..start + len].as_chunks::<2>().0.iter().map(|&c| u16::from_le_bytes(c)).collect();
             let name = String::from_utf16_lossy(&units);
             // 1 added, 3 modified, 5 renamed-to.
             if matches!(action, 1 | 3 | 5) && !name.is_empty() {
@@ -345,7 +345,7 @@ impl InstallTrace {
             }
         }
         let mut v: Vec<(String, u64)> = dirs.into_iter().collect();
-        v.sort_by(|a, b| b.1.cmp(&a.1));
+        v.sort_by_key(|e| std::cmp::Reverse(e.1));
         v.into_iter().map(|(d, _)| d).collect()
     }
 }

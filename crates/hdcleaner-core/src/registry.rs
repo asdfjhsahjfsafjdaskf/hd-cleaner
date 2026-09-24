@@ -170,7 +170,7 @@ impl Key {
         let (ty, data) = self.raw_value(name)?;
         match ty {
             REG_SZ | REG_EXPAND_SZ => {
-                let units: Vec<u16> = data.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+                let units: Vec<u16> = data.as_chunks::<2>().0.iter().map(|&c| u16::from_le_bytes(c)).collect();
                 let end = units.iter().position(|&c| c == 0).unwrap_or(units.len());
                 let s = String::from_utf16_lossy(&units[..end]);
                 Some(if ty == REG_EXPAND_SZ { expand_env(&s) } else { s })

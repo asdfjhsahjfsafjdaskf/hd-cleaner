@@ -101,7 +101,8 @@ pub fn parse_size(s: &str) -> Option<u64> {
         "t" | "tb" | "tib" => 1024.0f64.powi(4),
         _ => return None,
     };
-    if !(v >= 0.0) {
+    // NaN counts as invalid too: `v < 0.0` alone would let it through.
+    if v.is_nan() || v < 0.0 {
         return None;
     }
     Some((v * mul) as u64)

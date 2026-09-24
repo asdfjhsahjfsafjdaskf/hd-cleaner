@@ -86,7 +86,7 @@ fn is_candidate(h: HWND) -> bool {
 
 /// Topmost top-level window under a screen point (physical pixels),
 /// ignoring windows of `exclude_pid`.
-pub fn window_at(x: i32, y: i32, exclude_pid: u32) -> Option<HWND> {
+pub(crate) fn window_at(x: i32, y: i32, exclude_pid: u32) -> Option<HWND> {
     struct Find {
         x: i32,
         y: i32,
@@ -128,7 +128,7 @@ fn uwp_content_pid(frame: HWND, host: u32) -> Option<u32> {
     (st.1 != 0).then_some(st.1)
 }
 
-pub fn describe(h: HWND) -> Option<WindowInfo> {
+pub(crate) fn describe(h: HWND) -> Option<WindowInfo> {
     if unsafe { IsWindow(h) } == 0 {
         return None;
     }
@@ -164,7 +164,7 @@ pub fn describe(h: HWND) -> Option<WindowInfo> {
 
 /// [describe] plus, on the taskbar / overflow area, the tray icon at the
 /// point (its owner becomes the window's process).
-pub fn describe_at(h: HWND, x: i32, y: i32) -> Option<WindowInfo> {
+pub(crate) fn describe_at(h: HWND, x: i32, y: i32) -> Option<WindowInfo> {
     let mut info = describe(h)?;
     if matches!(info.shell, Some("taskbar" | "trayOverflow")) {
         info.tray_readable = tray_supported(h);
@@ -248,7 +248,7 @@ impl Drop for RemoteBuf {
 
 /// The tray icon under a screen point, if `top` is the taskbar or the
 /// overflow area and the icon can be read.
-pub fn tray_icon_at(top: HWND, x: i32, y: i32) -> Option<TrayIcon> {
+pub(crate) fn tray_icon_at(top: HWND, x: i32, y: i32) -> Option<TrayIcon> {
     let tb = tray_toolbar(top)?;
     let buf = RemoteBuf::new(pid_of(tb), 4096)?;
     let count = send(tb, TB_BUTTONCOUNT, 0, 0)?.clamp(0, 512) as usize;
@@ -285,7 +285,7 @@ pub fn tray_icon_at(top: HWND, x: i32, y: i32) -> Option<TrayIcon> {
         let tooltip = if len > 0 && len < 1000 {
             let mut t = vec![0u8; len as usize * 2];
             if buf.read(buf.ptr as usize, &mut t) {
-                let units: Vec<u16> = t.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+                let units: Vec<u16> = t.as_chunks::<2>().0.iter().map(|&c| u16::from_le_bytes(c)).collect();
                 String::from_utf16_lossy(&units).trim().to_string()
             } else {
                 String::new()
@@ -299,7 +299,7 @@ pub fn tray_icon_at(top: HWND, x: i32, y: i32) -> Option<TrayIcon> {
 }
 
 /// Whether this Windows exposes tray icons as a readable toolbar.
-pub fn tray_supported(top: HWND) -> bool {
+pub(crate) fn tray_supported(top: HWND) -> bool {
     tray_toolbar(top).is_some()
 }
 

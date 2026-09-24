@@ -74,7 +74,7 @@ fn render(icon: HICON, size: i32) -> Option<Vec<u8>> {
                 rgba[i + 3] = a as u8;
             }
         }
-        rgba.chunks_exact(4).any(|p| p[3] > 0).then_some(rgba)
+        rgba.as_chunks::<4>().0.iter().any(|p| p[3] > 0).then_some(rgba)
     }
 }
 
