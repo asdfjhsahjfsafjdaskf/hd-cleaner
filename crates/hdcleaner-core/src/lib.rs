@@ -49,5 +49,6 @@ pub mod tools;
 pub mod uninstall;
 pub mod treemap;
 pub mod util;
+pub mod wipe;
 
 pub use error::{ErrorPayload, AppError, Result};

@@ -84,6 +84,19 @@ enum Cmd {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Overwrite the free space of a drive (covers what deleted files left).
+    WipeFree {
+        /// Drive letter, e.g. C:
+        drive: String,
+        /// Stop after N MiB instead of filling the drive.
+        #[arg(long, value_name = "MIB")]
+        limit: Option<u64>,
+        /// Leave this much free, in MiB (default 1024).
+        #[arg(long, value_name = "MIB", default_value_t = 1024)]
+        reserve: u64,
+        #[arg(long)]
+        confirm: bool,
+    },
     /// Games the installed launchers (Steam, Epic, Riot) report.
     Games {
         /// Measure each game folder now (slow: it walks every file).
@@ -417,6 +430,49 @@ fn run(cli: Cli) -> Result<()> {
                 .map_err(explain)?;
             eprintln!("{rows} rows written to {}", output.display());
         }
+        Cmd::WipeFree { drive, limit, reserve, confirm } => {
+            use hdcleaner_core::wipe;
+            let reserve = reserve * (1 << 20);
+            let max = limit.map(|m| m * (1 << 20));
+            let plan = wipe::plan(&drive, max, reserve).map_err(explain)?;
+            println!("free now: {}", bytes(plan.free));
+            println!("would write: {} (leaving {} free)", bytes(plan.to_write), bytes(plan.reserve));
+            if plan.is_ssd {
+                for line in [
+                    "",
+                    "this drive is an SSD: TRIM and wear levelling mean the blocks written here are",
+                    "usually not the blocks that held the deleted data. Full-disk encryption is what",
+                    "protects it; this fills the drive for little gain and costs write endurance.",
+                ] {
+                    println!("{line}");
+                }
+            }
+            if !confirm {
+                bail!("nothing written: pass --confirm to run it");
+            }
+            let stop = std::sync::atomic::AtomicBool::new(false);
+            let mut last = 0u64;
+            let report = wipe::run(
+                &drive,
+                max,
+                reserve,
+                |written, total| {
+                    if written - last > (256 << 20) {
+                        last = written;
+                        eprint!("\r{} / {}   ", bytes(written), bytes(total));
+                    }
+                },
+                &|| stop.load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .map_err(explain)?;
+            eprintln!();
+            println!(
+                "wrote {} in {:.1}s{}",
+                bytes(report.written),
+                report.duration_ms as f64 / 1000.0,
+                if report.reached_reserve { " (stopped at the reserve)" } else { "" }
+            );
+        }
         Cmd::Games { measure } => {
             use hdcleaner_core::smartstorage;
             let libs = smartstorage::libraries();
@@ -507,10 +563,9 @@ not enough snapshots to show a change");
             }
             let mode = match (secure, permanent) {
                 (Some(passes), _) => {
-                    eprintln!(
-                        "secure delete: {passes} pass(es) over each file. This replaces what the file system holds now;
-                         on an SSD wear levelling can leave the old blocks readable, and backups or shadow copies are untouched."
-                    );
+                    eprintln!("secure delete: {passes} pass(es) over each file.");
+                    eprintln!("This replaces what the file system holds now; on an SSD wear levelling can");
+                    eprintln!("leave the old blocks readable, and backups or shadow copies are untouched.");
                     DeleteMode::Secure { passes }
                 }
                 (None, true) => DeleteMode::Permanent,

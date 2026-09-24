@@ -6,7 +6,7 @@ import type {
   ErrorPayload, NodeDetails, NodeRow, OperationRecord, Page, ScanEvent, ScanMeta, ScanMethod, ScanRecord,
   ScanStats, SearchSummary, SortKey, ToolInfo, Assessment, ItemResult, Program, AppSize, Identification, SizesEvent,
   PreparedUninstall, RunEvent, Leftover, LeftoverLevel, RemovalSummary, ForcedTarget, ForcedChoice, ProcInfo,
-  ProcessRow, ProcessDetails, TreeKill, StartupItem, TargetPicked, StartupImpact, CategorySummary, CleanItem, CleanEvent, CleanReport, InstallTrace, MonitorStatus, BackupSet, BackupManifest, RestoreResult, Timeline, AppAnalysis, CleanOutcome, UninstallImpact, Game, FileInfo, WindowsApp, BrowserExtension,
+  ProcessRow, ProcessDetails, TreeKill, StartupItem, TargetPicked, StartupImpact, CategorySummary, CleanItem, CleanEvent, CleanReport, InstallTrace, MonitorStatus, BackupSet, BackupManifest, RestoreResult, Timeline, AppAnalysis, CleanOutcome, UninstallImpact, Game, FileInfo, WindowsApp, BrowserExtension, WipePlan, WipeReport, WipeEvent,
 } from "../types";
 
 export function isErrorPayload(e: unknown): e is ErrorPayload {
@@ -152,6 +152,12 @@ export const api = {
 
   fileInfo: (path: string) => invoke<FileInfo>("file_info", { path }),
   clipboardFiles: (paths: string[], cut: boolean) => invoke<void>("clipboard_files", { paths, cut }),
+  wipePlan: (drive: string, limitMib?: number) => invoke<WipePlan>("wipe_plan", { drive, limitMib }),
+  wipeFreeSpace: (drive: string, limitMib: number | undefined, onEvent: (e: WipeEvent) => void) => {
+    const ch = new Channel<WipeEvent>();
+    ch.onmessage = onEvent;
+    return invoke<WipeReport>("wipe_free_space", { drive, limitMib, onEvent: ch });
+  },
   extensionsList: () => invoke<BrowserExtension[]>("extensions_list"),
   extensionRemove: (id: string, browser: string, recycle: boolean) => invoke<void>("extension_remove", { id, browser, recycle }),
   windowsAppsList: (measure: boolean) => invoke<WindowsApp[]>("windows_apps_list", { measure }),

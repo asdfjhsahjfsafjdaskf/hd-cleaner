@@ -798,3 +798,21 @@ export interface BrowserExtension {
   /** The browser is open: removal is refused while it is. */
   browserRunning: boolean;
 }
+
+export interface WipePlan {
+  free: number;
+  /** What would be written (free minus the reserve, capped by any limit). */
+  toWrite: number;
+  reserve: number;
+  /** Flash storage: overwriting promises much less here. */
+  isSsd: boolean;
+}
+
+export interface WipeReport {
+  written: number;
+  stopped: boolean;
+  reachedReserve: boolean;
+  durationMs: number;
+}
+
+export type WipeEvent = { event: "progress"; data: { written: number; total: number } };

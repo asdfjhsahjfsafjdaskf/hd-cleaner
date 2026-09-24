@@ -6,7 +6,7 @@ use hdcleaner_core::fsops::{self, DeleteMode, DeletePlan, ExecuteOptions, ItemOu
 use hdcleaner_core::AppError;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,6 +15,56 @@ pub struct Target {
     pub node: Option<u32>,
     /// Or an explicit path (e.g. from a file dialog).
     pub path: Option<String>,
+}
+
+/// What overwriting the free space of a drive would write right now.
+#[tauri::command]
+pub async fn wipe_plan(drive: String, limit_mib: Option<u64>) -> CmdResult<hdcleaner_core::wipe::WipePlan> {
+    let max = limit_mib.map(|m| m * (1 << 20));
+    tauri::async_runtime::spawn_blocking(move || hdcleaner_core::wipe::plan(&drive, max, hdcleaner_core::wipe::DEFAULT_RESERVE).ui())
+        .await
+        .map_err(|e| AppError::Helper(e.to_string()).to_payload())?
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "event", content = "data")]
+pub enum WipeEvent {
+    Progress { written: u64, total: u64 },
+}
+
+/// Fill the free space of a drive and delete what was written. The filler
+/// file always goes, even when the run is stopped or fails.
+#[tauri::command]
+pub async fn wipe_free_space(
+    app: AppHandle,
+    drive: String,
+    limit_mib: Option<u64>,
+    on_event: Channel<WipeEvent>,
+) -> CmdResult<hdcleaner_core::wipe::WipeReport> {
+    let state_drive = drive.clone();
+    let max = limit_mib.map(|m| m * (1 << 20));
+    let report = tauri::async_runtime::spawn_blocking(move || {
+        hdcleaner_core::wipe::run(
+            &drive,
+            max,
+            hdcleaner_core::wipe::DEFAULT_RESERVE,
+            |written, total| {
+                let _ = on_event.send(WipeEvent::Progress { written, total });
+            },
+            &|| false,
+        )
+    })
+    .await
+    .map_err(|e| AppError::Helper(e.to_string()).to_payload())?;
+    let state = app.state::<AppState>();
+    let _ = state.db.lock().record_operation(
+        "wipe-free-space",
+        if report.is_ok() { "completed" } else { "failed" },
+        &state_drive,
+        1,
+        &serde_json::json!({ "drive": state_drive, "report": report.as_ref().ok(), "error": report.as_ref().err().map(|e| e.to_payload()) }),
+    );
+    report.ui()
 }
 
 /// Put files on the Windows clipboard so Explorer can paste them. With
