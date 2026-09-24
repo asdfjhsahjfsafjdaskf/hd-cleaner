@@ -19,6 +19,8 @@ import { LargeFiles } from "./pages/LargeFiles";
 import { NotImplemented } from "./pages/NotImplemented";
 import { Cleaner } from "./pages/Cleaner";
 import { Backups } from "./pages/Backups";
+import { WindowsApps } from "./pages/WindowsApps";
+import { Extensions } from "./pages/Extensions";
 import { Monitor } from "./pages/Monitor";
 import { Processes } from "./pages/Processes";
 import { Programs } from "./pages/Programs";
@@ -106,6 +108,8 @@ export default function App() {
       case "processes": content = <Processes />; break;
       case "monitor": content = <Monitor />; break;
       case "backups": content = <Backups />; break;
+      case "windowsApps": content = <WindowsApps />; break;
+      case "extensions": content = <Extensions />; break;
       case "history": content = <History />; break;
       case "tools": content = <Tools />; break;
       case "settings": content = <Settings />; break;

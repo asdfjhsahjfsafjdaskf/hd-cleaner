@@ -10,3 +10,4 @@ pub mod search;
 pub mod system;
 pub mod tree;
 pub mod uninstall;
+pub mod windowsapps;

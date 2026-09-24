@@ -126,6 +126,77 @@ pub fn packages() -> Result<Vec<Program>> {
     Ok(out)
 }
 
+/// Packages Windows itself needs: removing them breaks the shell or the
+/// Store, so the app refuses and says so.
+pub fn is_critical(p: &Program) -> bool {
+    let family = p.package_family_name.as_deref().unwrap_or("").to_lowercase();
+    const CRITICAL: &[&str] = &[
+        "microsoft.windows.shellexperiencehost",
+        "microsoft.windows.startmenuexperiencehost",
+        "microsoft.windows.search",
+        "microsoft.windows.cortana",
+        "microsoft.ui.xaml",
+        "microsoft.vclibs",
+        "microsoft.net.native",
+        "microsoft.windowsstore",
+        "microsoft.desktopappinstaller",
+        "microsoft.accountscontrol",
+        "microsoft.windows.sechealthui",
+        "windows.cbspreview",
+        "microsoft.windows.immersivecontrolpanel",
+        "microsoft.windows.contentdeliverymanager",
+        "microsoft.windows.peopleexperiencehost",
+        "microsoft.aad.brokerplugin",
+        "microsoft.creddialoghost",
+    ];
+    p.signature_kind.as_deref() == Some("system") || CRITICAL.iter().any(|c| family.starts_with(c))
+}
+
+/// Remove a package. `all_users` needs administrator rights and goes through
+/// the elevated helper; without it only the current user's copy goes.
+pub fn remove(full_name: &str, all_users: bool) -> Result<()> {
+    use windows::core::HSTRING;
+    use windows::Management::Deployment::{PackageManager, RemovalOptions};
+    let map = |e: windows::core::Error| AppError::Win32 {
+        code: e.code().0 as u32,
+        context: format!("removing package: {}", e.message()),
+        path: Some(full_name.into()),
+    };
+    let pm = PackageManager::new().map_err(map)?;
+    let options = if all_users { RemovalOptions::RemoveForAllUsers } else { RemovalOptions::None };
+    let op = pm.RemovePackageWithOptionsAsync(&HSTRING::from(full_name), options).map_err(map)?;
+    let result = op.join().map_err(map)?;
+    let hr = result.ExtendedErrorCode().map_err(map)?;
+    if hr.is_err() {
+        let text = result.ErrorText().map(|t| t.to_string()).unwrap_or_default();
+        return Err(AppError::Win32 { code: hr.0 as u32, context: format!("removing package: {text}"), path: Some(full_name.into()) });
+    }
+    Ok(())
+}
+
+/// Re-register a package for the current user — the same repair Windows does
+/// for an app that stopped opening. It reinstalls nothing and keeps app data.
+pub fn repair(full_name: &str) -> Result<()> {
+    use windows::core::HSTRING;
+    use windows::Management::Deployment::{DeploymentOptions, PackageManager};
+    let map = |e: windows::core::Error| AppError::Win32 {
+        code: e.code().0 as u32,
+        context: format!("repairing package: {}", e.message()),
+        path: Some(full_name.into()),
+    };
+    let pm = PackageManager::new().map_err(map)?;
+    let op = pm
+        .RegisterPackageByFullNameAsync(&HSTRING::from(full_name), None, DeploymentOptions::None)
+        .map_err(map)?;
+    let result = op.join().map_err(map)?;
+    let hr = result.ExtendedErrorCode().map_err(map)?;
+    if hr.is_err() {
+        let text = result.ErrorText().map(|t| t.to_string()).unwrap_or_default();
+        return Err(AppError::Win32 { code: hr.0 as u32, context: format!("repairing package: {text}"), path: Some(full_name.into()) });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

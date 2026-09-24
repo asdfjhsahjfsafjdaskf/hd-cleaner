@@ -6,7 +6,7 @@ import type { Target } from "../services/api";
 
 export type PageId =
   | "dashboard" | "analyzer" | "changes" | "largeFiles" | "duplicates"
-  | "programs" | "windowsApps" | "cleaner" | "startup" | "processes" | "monitor" | "backups"
+  | "programs" | "windowsApps" | "extensions" | "cleaner" | "startup" | "processes" | "monitor" | "backups"
   | "history" | "tools" | "settings";
 
 export interface Settings {

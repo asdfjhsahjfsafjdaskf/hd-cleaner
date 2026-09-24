@@ -764,3 +764,37 @@ export interface Game {
   id?: string | null;
   exists: boolean;
 }
+
+export type SignatureState = "trusted" | "untrusted" | "unsigned" | "unknown";
+
+export interface FileInfo {
+  /** DOMAIN\Account of the owner, when Windows can tell. */
+  owner?: string | null;
+  signature: SignatureState;
+  signer?: string | null;
+  /** Windows' own explanation when the check did not pass. */
+  signatureDetail?: string | null;
+}
+
+export interface WindowsApp extends Program {
+  /** Windows needs it: removal is refused. */
+  critical: boolean;
+  /** Size of the install folder, when it was measured. */
+  bytes?: number | null;
+}
+
+export interface BrowserExtension {
+  browser: string;
+  browserName: string;
+  profile: string;
+  id: string;
+  name: string;
+  version: string;
+  /** Folder (Chromium) or .xpi file (Firefox). */
+  path: string;
+  bytes: number;
+  /** null when the browser does not say. */
+  enabled?: boolean | null;
+  /** The browser is open: removal is refused while it is. */
+  browserRunning: boolean;
+}

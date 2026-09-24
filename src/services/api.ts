@@ -6,7 +6,7 @@ import type {
   ErrorPayload, NodeDetails, NodeRow, OperationRecord, Page, ScanEvent, ScanMeta, ScanMethod, ScanRecord,
   ScanStats, SearchSummary, SortKey, ToolInfo, Assessment, ItemResult, Program, AppSize, Identification, SizesEvent,
   PreparedUninstall, RunEvent, Leftover, LeftoverLevel, RemovalSummary, ForcedTarget, ForcedChoice, ProcInfo,
-  ProcessRow, ProcessDetails, TreeKill, StartupItem, TargetPicked, StartupImpact, CategorySummary, CleanItem, CleanEvent, CleanReport, InstallTrace, MonitorStatus, BackupSet, BackupManifest, RestoreResult, Timeline, AppAnalysis, CleanOutcome, UninstallImpact, Game,
+  ProcessRow, ProcessDetails, TreeKill, StartupItem, TargetPicked, StartupImpact, CategorySummary, CleanItem, CleanEvent, CleanReport, InstallTrace, MonitorStatus, BackupSet, BackupManifest, RestoreResult, Timeline, AppAnalysis, CleanOutcome, UninstallImpact, Game, FileInfo, WindowsApp, BrowserExtension,
 } from "../types";
 
 export function isErrorPayload(e: unknown): e is ErrorPayload {
@@ -148,6 +148,12 @@ export const api = {
   traceExport: (id: number, path: string) => invoke<number>("trace_export", { id, path }),
   traceImport: (path: string, suffix: string) => invoke<InstallTrace>("trace_import", { path, suffix }),
 
+  fileInfo: (path: string) => invoke<FileInfo>("file_info", { path }),
+  extensionsList: () => invoke<BrowserExtension[]>("extensions_list"),
+  extensionRemove: (id: string, browser: string, recycle: boolean) => invoke<void>("extension_remove", { id, browser, recycle }),
+  windowsAppsList: (measure: boolean) => invoke<WindowsApp[]>("windows_apps_list", { measure }),
+  windowsAppRepair: (fullName: string) => invoke<void>("windows_app_repair", { fullName }),
+  windowsAppRemove: (fullName: string, allUsers: boolean) => invoke<void>("windows_app_remove", { fullName, allUsers }),
   gamesList: (measure: boolean) => invoke<Game[]>("games_list", { measure }),
   appAnalysis: (id: string) => invoke<AppAnalysis>("app_analysis", { id }),
   appCleanCache: (id: string, category: string, dryRun: boolean) => invoke<CleanOutcome>("app_clean_cache", { id, category, dryRun }),

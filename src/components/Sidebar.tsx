@@ -1,4 +1,5 @@
 import {
+  Blocks,
   AppWindow, Archive, BarChart3, Boxes, Copy, Cpu, Crosshair, FileStack, GitCompareArrows, HardDrive, History, LayoutDashboard, Power,
   Radar, Settings, ShieldCheck, Sparkles, Wrench,
 } from "lucide-react";
@@ -29,7 +30,8 @@ const GROUPS: { title?: string; items: Item[]; action?: boolean }[] = [
     title: "nav.groupApps",
     items: [
       { id: "programs", icon: <Boxes size={17} /> },
-      { id: "windowsApps", icon: <AppWindow size={17} />, notImplemented: true },
+      { id: "windowsApps", icon: <AppWindow size={17} /> },
+      { id: "extensions", icon: <Blocks size={17} /> },
       { id: "startup", icon: <Power size={17} /> },
       { id: "processes", icon: <Cpu size={17} /> },
       { id: "monitor", icon: <Radar size={17} /> },

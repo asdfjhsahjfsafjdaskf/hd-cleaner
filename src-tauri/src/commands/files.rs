@@ -17,6 +17,14 @@ pub struct Target {
     pub path: Option<String>,
 }
 
+/// Owner and Authenticode signature of one file, read from Windows.
+#[tauri::command]
+pub async fn file_info(path: String) -> CmdResult<hdcleaner_core::fileinfo::FileInfo> {
+    tauri::async_runtime::spawn_blocking(move || hdcleaner_core::fileinfo::read(&path))
+        .await
+        .map_err(|e| hdcleaner_core::AppError::Helper(e.to_string()).to_payload())
+}
+
 #[tauri::command]
 pub async fn plan_delete(
     state: State<'_, AppState>,

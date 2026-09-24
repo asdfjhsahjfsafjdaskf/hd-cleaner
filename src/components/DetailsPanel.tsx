@@ -2,12 +2,20 @@ import { ClipboardCopy, ExternalLink, File, Folder, FolderOpen, Info, LayoutGrid
 import { useEffect, useState } from "react";
 import { api } from "../services/api";
 import { useT } from "../i18n";
-import type { Assessment, Identification, NodeDetails } from "../types";
+import type { Assessment, FileInfo, Identification, NodeDetails } from "../types";
 import { useApp } from "../stores/app";
 import { usePrograms } from "../stores/programs";
 import { CATEGORY_COLORS } from "../utils/colors";
 import { formatAttributes, formatBytes, formatDate, formatNumber, formatPercent } from "../utils/format";
 import { copyText, requestDelete } from "./fileActions";
+
+/** How each signature verdict is shown. */
+const SIGNATURE_BADGE: Record<string, string> = {
+  trusted: "safe",
+  untrusted: "dangerous",
+  unsigned: "neutral",
+  unknown: "neutral",
+};
 
 interface Props {
   scanId: number;
@@ -22,11 +30,13 @@ export function DetailsPanel({ scanId, node, version, onShowInTreemap, onChanged
   const [d, setD] = useState<NodeDetails>();
   const [risk, setRisk] = useState<Assessment>();
   const [related, setRelated] = useState<Identification[]>();
+  const [info, setInfo] = useState<FileInfo>();
 
   useEffect(() => {
     setD(undefined);
     setRisk(undefined);
     setRelated(undefined);
+    setInfo(undefined);
     if (node === undefined) return;
     let alive = true;
     api.nodeDetails(scanId, node).then((x) => {
@@ -34,6 +44,8 @@ export function DetailsPanel({ scanId, node, version, onShowInTreemap, onChanged
       setD(x);
       api.assess(x.path).then((r) => alive && setRisk(r)).catch(() => {});
       api.identifyProgram(x.path).then((r) => alive && setRelated(r)).catch(() => alive && setRelated([]));
+      // Signature checks touch the disk: folders have none to read.
+      if (!x.isDir) api.fileInfo(x.path).then((r) => alive && setInfo(r)).catch(() => {});
     }).catch(() => {});
     return () => {
       alive = false;
@@ -113,8 +125,24 @@ export function DetailsPanel({ scanId, node, version, onShowInTreemap, onChanged
             </span>
           ) : "…"}
         </dd>
-        <dt>{t("details.ownerSignature")}</dt>
-        <dd className="faint">{t("common.notImplemented")}</dd>
+        <dt>{t("details.owner")}</dt>
+        <dd>{d.isDir ? <span className="faint">{t("common.none")}</span> : info ? (info.owner ?? <span className="faint">{t("details.ownerUnknown")}</span>) : "…"}</dd>
+        <dt>{t("details.signature")}</dt>
+        <dd>
+          {d.isDir ? (
+            <span className="faint">{t("common.none")}</span>
+          ) : !info ? (
+            "…"
+          ) : (
+            <span className="col" style={{ gap: "0.1rem" }}>
+              <span className={`badge ${SIGNATURE_BADGE[info.signature]}`}>{t(`details.sig_${info.signature}`)}</span>
+              {info.signer && <span className="faint" style={{ fontSize: "0.82rem" }}>{info.signer}</span>}
+              {info.signatureDetail && info.signature !== "trusted" && (
+                <span className="faint" style={{ fontSize: "0.82rem" }}>{t(`details.sigWhy_${info.signatureDetail}`)}</span>
+              )}
+            </span>
+          )}
+        </dd>
         <dt>{t("details.relatedApp")}</dt>
         <dd>
           {related === undefined ? "…" : related.length === 0 ? <span className="faint">{t("common.none")}</span> : related.slice(0, 3).map((r) => (

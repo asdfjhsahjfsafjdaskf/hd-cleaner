@@ -380,6 +380,9 @@ pub enum ElevatedOp {
     Clean { category: String, items: Vec<crate::cleaner::CleanItem> },
     /// List the items of machine-wide cleaner categories (read-only).
     AnalyzeClean { categories: Vec<String> },
+    /// Remove a Store package for every user. The helper refuses packages
+    /// Windows itself needs, exactly like the normal path does.
+    RemovePackageAllUsers { full_name: String },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -508,6 +511,14 @@ fn helper_apply_ops(channel: &str) -> Result<()> {
             ElevatedOp::ReadBootPerformance => crate::bootperf::read().map(|r| data = serde_json::to_value(r).ok()),
             ElevatedOp::Clean { category, items } => crate::cleaner::clean_elevated(category, items).map(|o| data = serde_json::to_value(o).ok()),
             ElevatedOp::AnalyzeClean { categories } => crate::cleaner::analyze_admin(categories).map(|r| data = serde_json::to_value(r).ok()),
+            ElevatedOp::RemovePackageAllUsers { full_name } => match crate::appx::packages().ok().and_then(|list| {
+                list.into_iter().find(|p| p.package_full_name.as_deref() == Some(full_name.as_str()))
+            }) {
+                Some(p) if crate::appx::is_critical(&p) => {
+                    Err(crate::AppError::Protected { path: full_name.clone(), reason: "windowsComponent".into() })
+                }
+                _ => crate::appx::remove(full_name, true),
+            },
         };
         let res = ElevatedResult {
             index,

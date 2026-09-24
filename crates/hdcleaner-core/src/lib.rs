@@ -21,6 +21,8 @@ pub mod elevation;
 pub mod error;
 pub mod export;
 pub mod forced;
+pub mod extensions;
+pub mod fileinfo;
 pub mod format;
 pub mod fsops;
 pub mod icons;
