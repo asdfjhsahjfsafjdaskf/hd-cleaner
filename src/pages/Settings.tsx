@@ -25,8 +25,10 @@ export function Settings() {
   // Read from the registry, not from the app's own settings: the entry can be
   // changed from outside (the Startup page, Task Manager, Windows itself).
   const [autoStart, setAutoStart] = useState<boolean>();
+  const [explorerMenu, setExplorerMenu] = useState<boolean>();
   useEffect(() => {
     api.startWithWindows().then(setAutoStart).catch(() => setAutoStart(false));
+    api.explorerMenu().then(setExplorerMenu).catch(app.toastError);
   }, []);
 
   const toggleAutoStart = async (v: boolean) => {
@@ -35,6 +37,17 @@ export function Settings() {
       await api.setStartWithWindows(v);
     } catch (e) {
       setAutoStart(!v);
+      app.toastError(e);
+    }
+  };
+
+  const toggleExplorerMenu = async (enabled: boolean) => {
+    setExplorerMenu(enabled);
+    try {
+      await api.setExplorerMenu(enabled, s.language === "pt-BR"
+        ? "Analisar com HD Cleaner" : "Analyze with HD Cleaner");
+    } catch (e) {
+      setExplorerMenu(!enabled);
       app.toastError(e);
     }
   };
@@ -71,7 +84,9 @@ export function Settings() {
           <Switch checked={autoStart ?? false} disabled={autoStart === undefined} onChange={(v) => void toggleAutoStart(v)} label={t("settings.startWithWindows")} />
         </Row>
         <Row label={t("settings.checkUpdates")} disabled><Switch checked={false} disabled onChange={() => {}} label={t("settings.checkUpdates")} /></Row>
-        <Row label={t("settings.explorerMenu").replace("…", "HD Cleaner")} disabled><Switch checked={false} disabled onChange={() => {}} label={t("settings.explorerMenu")} /></Row>
+        <Row label={t("settings.explorerMenu").replace("…", "HD Cleaner")}>
+          <Switch checked={explorerMenu ?? false} disabled={explorerMenu === undefined} onChange={(v) => void toggleExplorerMenu(v)} label={t("settings.explorerMenu")} />
+        </Row>
       </div>
 
       <div className="section-title">{t("settings.analyzer")}</div>

@@ -14,7 +14,8 @@
 
 use crate::{AppError, Result};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+use std::os::windows::fs::MetadataExt;
 
 pub const MANIFEST: &str = "backup.json";
 /// Files up to this size are copied into the backup before removal.
@@ -90,11 +91,22 @@ pub struct BackupSet {
     pub legacy: bool,
 }
 
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+
+fn is_reparse(path: &Path) -> std::io::Result<bool> {
+    Ok(std::fs::symlink_metadata(path)?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0)
+}
+
+fn valid_stored(stored: &str) -> bool {
+    !stored.is_empty() && Path::new(stored).components().all(|c| matches!(c, Component::Normal(_)))
+}
+
 fn dir_size(dir: &Path) -> u64 {
     let mut total = 0;
     let Ok(rd) = std::fs::read_dir(dir) else { return 0 };
     for e in rd.flatten() {
-        match e.metadata() {
+        match e.path().symlink_metadata() {
+            Ok(m) if m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 => {},
             Ok(m) if m.is_dir() => total += dir_size(&e.path()),
             Ok(m) => total += m.len(),
             Err(_) => {}
@@ -120,6 +132,9 @@ pub fn read(dir: &Path) -> Result<Manifest> {
     let file = dir.join(MANIFEST);
     if let Ok(raw) = std::fs::read(&file) {
         if let Ok(m) = serde_json::from_slice::<Manifest>(&raw) {
+            if m.entries.iter().any(|e| e.stored.as_deref().is_some_and(|s| !valid_stored(s))) {
+                return Err(AppError::Corrupt("backup contains an invalid stored path".into()));
+            }
             return Ok(m);
         }
     }
@@ -184,7 +199,7 @@ pub fn list(root: &Path) -> Vec<BackupSet> {
     let Ok(rd) = std::fs::read_dir(root) else { return out };
     for e in rd.flatten() {
         let dir = e.path();
-        if !dir.is_dir() {
+        if !dir.is_dir() || is_reparse(&dir).unwrap_or(true) {
             continue;
         }
         let Ok(m) = read(&dir) else { continue };
@@ -217,7 +232,7 @@ pub fn dir_of(root: &Path, id: &str) -> Result<PathBuf> {
         return Err(AppError::InvalidInput("invalid backup id".into()));
     }
     let dir = root.join(id);
-    if !dir.is_dir() {
+    if !dir.is_dir() || is_reparse(&dir).unwrap_or(true) {
         return Err(AppError::NotFound { path: dir.to_string_lossy().into_owned() });
     }
     Ok(dir)
@@ -238,6 +253,9 @@ pub struct RestoreResult {
 }
 
 fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+    if is_reparse(from)? {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "backup contains a link or junction"));
+    }
     if from.is_dir() {
         std::fs::create_dir_all(to)?;
         for e in std::fs::read_dir(from)? {
@@ -293,7 +311,7 @@ pub fn restore(dir: &Path, indexes: &[usize]) -> Result<Vec<RestoreResult>> {
                         RestoreResult { index: i, path: entry.path.clone(), status: "missing", values: None, error: None }
                     }
                     Some(file) => {
-                        if target.exists() {
+                        if target.symlink_metadata().is_ok() {
                             RestoreResult { index: i, path: entry.path.clone(), status: "exists", values: None, error: None }
                         } else {
                             match copy_tree(&file, target) {
@@ -356,6 +374,22 @@ pub fn quarantine(source: &Path, dir: &Path, index: usize, budget: &mut u64) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_manifest_that_points_outside_backup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut manifest = Manifest::new("test", "test");
+        manifest.entries.push(Entry {
+            kind: EntryKind::File,
+            path: tmp.path().join("restored.txt").to_string_lossy().into_owned(),
+            stored: Some(r"..\outside.txt".into()),
+            size: 1,
+        });
+        manifest.save(tmp.path()).unwrap();
+        assert!(read(tmp.path()).is_err());
+        assert!(restore(tmp.path(), &[0]).is_err());
+        assert!(!tmp.path().join("restored.txt").exists());
+    }
 
     #[test]
     fn quarantines_and_restores_a_file() {

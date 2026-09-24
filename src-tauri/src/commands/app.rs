@@ -15,6 +15,8 @@ pub struct AppInfo {
     pub os: hdcleaner_core::system::OsInfo,
     pub data_dir: String,
     pub interrupted: Vec<OperationRecord>,
+    /// Folder Explorer asked us to analyze ("Analyze with HD Cleaner").
+    pub open_path: Option<String>,
 }
 
 #[tauri::command]
@@ -25,6 +27,7 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
         os: hdcleaner_core::system::os_info(),
         data_dir: state.data_dir.to_string_lossy().into_owned(),
         interrupted: state.interrupted.lock().clone(),
+        open_path: hdcleaner_core::shellmenu::path_from_args(&std::env::args().collect::<Vec<_>>()),
     }
 }
 
@@ -135,4 +138,28 @@ pub fn restart_elevated(app: AppHandle) -> CmdResult<()> {
 #[tauri::command]
 pub fn protection_assess(path: String) -> hdcleaner_core::protection::Assessment {
     hdcleaner_core::protection::assess(&path)
+}
+
+/// Is the "Analyze with HD Cleaner" entry in Explorer's menu?
+#[tauri::command]
+pub fn explorer_menu() -> bool {
+    hdcleaner_core::shellmenu::installed()
+}
+
+/// Add or remove that entry (current user only, no administrator).
+#[tauri::command]
+pub fn set_explorer_menu(state: State<'_, AppState>, enabled: bool, label: String) -> CmdResult<()> {
+    let r = if enabled {
+        hdcleaner_core::shellmenu::install(&label)
+    } else {
+        hdcleaner_core::shellmenu::uninstall()
+    };
+    let _ = state.db.lock().record_operation(
+        "explorer-menu",
+        if r.is_ok() { "completed" } else { "failed" },
+        if enabled { "on" } else { "off" },
+        1,
+        &serde_json::json!({ "enabled": enabled, "error": r.as_ref().err().map(|e| e.to_payload()) }),
+    );
+    r.ui()
 }

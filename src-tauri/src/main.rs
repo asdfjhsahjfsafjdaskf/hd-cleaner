@@ -145,6 +145,8 @@ fn main() {
             commands::windowsapps::windows_app_remove,
             commands::system::start_with_windows,
             commands::system::set_start_with_windows,
+            commands::app::explorer_menu,
+            commands::app::set_explorer_menu,
             commands::files::wipe_plan,
             commands::files::wipe_free_space,
             commands::files::file_info,

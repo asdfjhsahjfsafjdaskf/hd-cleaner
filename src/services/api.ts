@@ -33,6 +33,8 @@ export const api = {
   listTools: () => invoke<ToolInfo[]>("list_tools"),
   launchTool: (id: string) => invoke<void>("launch_tool", { id }),
   restartElevated: () => invoke<void>("restart_elevated"),
+  explorerMenu: () => invoke<boolean>("explorer_menu"),
+  setExplorerMenu: (enabled: boolean, label: string) => invoke<void>("set_explorer_menu", { enabled, label }),
   assess: (path: string) => invoke<Assessment>("protection_assess", { path }),
 
   startScan: (root: string, method: ScanMethod, elevate: boolean, followJunctions: boolean, onEvent: (e: ScanEvent) => void) => {

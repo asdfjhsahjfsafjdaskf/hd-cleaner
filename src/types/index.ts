@@ -52,6 +52,7 @@ export interface AppInfo {
   os: OsInfo;
   dataDir: string;
   interrupted: OperationRecord[];
+  openPath?: string | null;
 }
 
 export type ScanMethod = "auto" | "standard" | "ntfsMft";

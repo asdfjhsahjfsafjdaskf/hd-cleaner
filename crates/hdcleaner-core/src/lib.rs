@@ -37,6 +37,7 @@ pub mod registry;
 pub mod report;
 pub mod scan;
 pub mod search;
+pub mod shellmenu;
 pub mod shortcuts;
 pub mod startup;
 pub mod smartstorage;

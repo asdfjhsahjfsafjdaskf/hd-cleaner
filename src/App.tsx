@@ -1,5 +1,5 @@
 import { AlertTriangle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ContextMenuHost } from "./components/ContextMenu";
 import { DeleteDialog } from "./components/DeleteDialog";
 import { Modal } from "./components/Modal";
@@ -30,6 +30,7 @@ import { Settings } from "./pages/Settings";
 import { Tools } from "./pages/Tools";
 import { api } from "./services/api";
 import { useApp } from "./stores/app";
+import { useAnalyzer } from "./stores/analyzer";
 import type { OperationRecord } from "./types";
 import { formatDate } from "./utils/format";
 
@@ -86,10 +87,20 @@ function InterruptedDialog() {
 }
 
 export default function App() {
-  const { page, init, settingsLoaded } = useApp();
+  const { page, init, settingsLoaded, info, navigate } = useApp();
+  const openedFromExplorer = useRef(false);
   useEffect(() => {
     init();
   }, [init]);
+
+  useEffect(() => {
+    if (!settingsLoaded || !info?.openPath || openedFromExplorer.current) return;
+    openedFromExplorer.current = true;
+    const analyzer = useAnalyzer.getState();
+    analyzer.setTarget(info.openPath);
+    navigate("analyzer");
+    void analyzer.startScan(info.openPath, false);
+  }, [settingsLoaded, info?.openPath, navigate]);
 
   // Ctrl+H opens the history of everything this app did.
   useEffect(() => {
