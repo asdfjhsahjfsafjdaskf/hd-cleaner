@@ -17,6 +17,13 @@ pub struct Target {
     pub path: Option<String>,
 }
 
+/// Put files on the Windows clipboard so Explorer can paste them. With
+/// `cut`, the paste moves them; this app never moves anything here.
+#[tauri::command]
+pub async fn clipboard_files(paths: Vec<String>, cut: bool) -> CmdResult<()> {
+    hdcleaner_core::clipboard::set_files(&paths, cut).ui()
+}
+
 /// Owner and Authenticode signature of one file, read from Windows.
 #[tauri::command]
 pub async fn file_info(path: String) -> CmdResult<hdcleaner_core::fileinfo::FileInfo> {
@@ -90,6 +97,7 @@ pub async fn execute_delete(
         (_, true) => "delete-dry-run",
         (DeleteMode::RecycleBin, _) => "recycle",
         (DeleteMode::Permanent, _) => "delete-permanent",
+        (DeleteMode::Secure { .. }, _) => "delete-secure",
     };
     let paths: Vec<&str> = plan.items.iter().map(|i| i.path.as_str()).collect();
     // Journal first: if the app dies mid-way the history shows it interrupted.

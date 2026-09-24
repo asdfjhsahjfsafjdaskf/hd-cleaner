@@ -1,6 +1,6 @@
 # HD Cleaner — Status do projeto
 
-**Atualizado em 24/09/2026**, ao final da Fase 13 (App Analyzer, Uninstall Impact e Smart Storage).
+**Atualizado em 24/09/2026**, durante a Fase 14 (acabamento).
 
 Este arquivo registra **tudo o que já foi feito** e **tudo o que ainda falta**, seguindo as seções da especificação original. Nenhuma funcionalidade listada aqui como feita é simulada: todas foram compiladas, testadas por testes automatizados e, quando indicado, verificadas no app real, nesta máquina.
 
@@ -17,7 +17,7 @@ Documentos relacionados:
 |---|---|
 | Stack | Rust 1.98 (MSVC) + Tauri 2 + React 19 + TypeScript + Vite |
 | Estrutura | `crates/hdcleaner-core` (toda a lógica) · `crates/hdcleaner-cli` (binário `hdcleaner`) · `crates/test-fixtures` (programa falso de teste) · `src-tauri` (camada de comandos) · `src` (interface) |
-| Testes automatizados | **108 testes Rust + 7 testes de ponta a ponta (desinstalação normal, forçada, inicialização, árvore de processos, limpeza em sandbox, Lixeira e monitor de instalação) passando**. Os testes destrutivos usam apenas pastas temporárias ou o programa falso de teste (sob o perfil do usuário) |
+| Testes automatizados | **118 testes Rust + 7 testes de ponta a ponta (desinstalação normal, forçada, inicialização, árvore de processos, limpeza em sandbox, Lixeira e monitor de instalação) passando**. Os testes destrutivos usam apenas pastas temporárias ou o programa falso de teste (sob o perfil do usuário) |
 | Tipagem do frontend | `tsc --noEmit` sem erros |
 | Build de release | `hd-cleaner.exe` com 13,4 MB (sem instalador). Instaladores NSIS/MSI ainda não foram gerados |
 | Controle de versão | A pasta **não é um repositório git** e nenhum commit foi feito |
@@ -446,27 +446,34 @@ Legenda: 🔴 não iniciado · 🟡 parcial
 - Falta:
   - exportar e importar a **MFT bruta** para análise offline — marcado como opcional na especificação e **não implementado**; a leitura da MFT continua sendo feita ao vivo, e o snapshot `.hdcs` já serve para levar uma varredura para outra máquina.
 
-### Fase 14 — Desempenho, segurança e acabamento 🔴 (próxima)
+### Fase 14 — Desempenho, segurança e acabamento 🟡 (em andamento)
+
+**Já feito nesta fase:**
+
+- **Dono e assinatura digital** (`fileinfo.rs`, seções 67-68): o painel de detalhes deixou de dizer "não implementado". O dono vem do descritor de segurança do arquivo; a assinatura, do `WinVerifyTrust` — e quando o arquivo não carrega assinatura embutida, a verificação **cai para o catálogo do Windows**, que é como o próprio Windows assina os binários dele. Por isso `notepad.exe` aparece como "assinado e confiável · Microsoft Windows", e não como sem assinatura. Quando a verificação não passa, a tela mostra o motivo que o Windows deu (expirado, revogado, raiz não confiável…).
+- **Windows Apps** (seção 23): a tela deixou de ser um espaço reservado. Lista os pacotes da Store com versão, fabricante, dependências e tamanho opcional; **reparar** registra o pacote de novo (é o que o Windows faz com um app que parou de abrir, e mantém os dados); **remover** vale para a conta atual ou, com aprovação de administrador, para todos os usuários. Pacotes de que o Windows precisa aparecem marcados e a remoção é **recusada no app e dentro do helper**.
+- **Extensões de navegador** (seção 24): tela nova que lê o `manifest.json` e o `Preferences` de Chrome, Edge, Brave, Vivaldi, Opera e Opera GX, e o `extensions.json` do Firefox — com nome localizado (`__MSG_…`), versão, tamanho, perfil e se está ligada. Remover apaga a pasta pelo protocolo normal de exclusão, **só com o navegador fechado**, e a tela avisa que um perfil sincronizado pode trazer a extensão de volta.
+- **Exclusão segura** (seção 35): novo modo no diálogo de exclusão, com **1, 3 ou 7 passagens** de sobrescrita antes de apagar, e na CLI como `hdcleaner delete <caminho> --secure N --confirm`. O aviso é explícito e aparece antes de qualquer coisa: a sobrescrita troca o que o sistema de arquivos tem hoje, **não alcança** backups, cópias de sombra nem cópias anteriores, e **em SSD o nivelamento de desgaste pode deixar os blocos antigos legíveis** — a tela diz isso em destaque quando o arquivo está num SSD. Links e junções nunca são seguidos (teste automatizado).
+- **Iniciar com o Windows** (Configurações): a opção era desabilitada e agora funciona — cria ou remove um item `Run` na conta do usuário (sem administrador), e ele aparece na própria página Inicialização como qualquer outro.
+- **Atalhos que faltavam** (seção 54): **Ctrl+X** põe o arquivo selecionado na área de transferência do Windows como recorte (colar no Explorer move; o app não move nada sozinho) e **Ctrl+H** abre o Histórico.
+- **Instaladores gerados** (`npx tauri build`): saíram o **MSI (6,2 MB)** e o **instalador NSIS (4,3 MB)**, e o executável de release foi aberto para conferir que roda (36 MB de memória). ARM64 continua sem teste — não há máquina aqui.
+
+**Ainda falta nesta fase:**
 
 - Perfilar e reduzir cópias de strings; medir a memória em varreduras de 5 milhões ou mais de arquivos.
 - **Monitoramento incremental** do sistema de arquivos após a varredura (seção 43), com USN Journal ou `ReadDirectoryChangesW`.
-- **Assinatura Authenticode** e **proprietário** no painel de detalhes (seções 67 e 68). Hoje aparecem marcados como "Ainda não implementado".
 - Mostrar **File ID** e contagem de hard links também na varredura padrão (hoje só a MFT fornece a contagem).
 - Colunas "Quantidade de duplicados" e "Espaço duplicado" na file view (seção 9).
 - Agrupamento por **proprietário** em Arquivos Grandes.
 - **Fila visual de operações** longas de arquivo, com progresso (seção 13); hoje a cópia e a movimentação usam o diálogo do Windows.
-- Atalhos que faltam: Ctrl+H e Ctrl+X (recortar) (seção 54).
 - Acessibilidade: revisão com leitor de tela e testes nos níveis de DPI 100%, 125%, 150% e 200% (seção 53).
 - **Menu de contexto do Explorer**, "Analisar com HD Cleaner", com opção de remover (seção 55).
-- Configurações "Iniciar com o Windows" e "Verificar atualizações" (hoje desabilitadas e marcadas).
-- **Updater assinado**, com validação de assinatura e integridade (seção 63).
-- **Secure Delete** com métodos de sobrescrita configuráveis e aviso claro sobre SSDs (seção 35).
+- Configuração "Verificar atualizações" e **updater assinado** (seção 63): depende de um servidor de releases que este projeto não tem; continua marcado como não implementado na tela.
+- Testar os instaladores em **ARM64**.
+- "Redefinir" um app da Store (apagar os dados dele): a API pública do Windows não oferece isso — só a própria tela de Configurações do Windows faz.
 - **Limpeza do espaço livre** com confirmação explícita e estimativa do volume a gravar (seção 36).
 - Suporte a dispositivos **MTP/PTP** (seção 5), se for viável.
 - MFT com `$ATTRIBUTE_LIST` no registro 0: hoje cai para a varredura padrão; o ideal é suportar leitura completa.
-- **Windows Apps** (seção 23): remover para o usuário atual ou para todos, redefinir, reparar e ver o pacote e as dependências, com alertas para componentes críticos. A listagem já existe na página Programas.
-- **Extensões de navegadores** (seção 24): Chrome, Edge, Firefox, Brave, Opera e Vivaldi, com nome, ID, versão, pasta, tamanho, estado e remoção segura.
-- Gerar os instaladores **NSIS/MSI** (`npx tauri build`) e testar em ARM64.
 - Testes adicionais pedidos (seção 59): arquivos sparse, arquivos enormes e testes de integração da interface.
 - Dar um nome definitivo ao produto (hoje é provisório).
 - Resolver os avisos de estilo do `clippy` (nenhum é de correção).

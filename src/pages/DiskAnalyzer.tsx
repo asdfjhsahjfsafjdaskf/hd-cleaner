@@ -149,6 +149,18 @@ export function DiskAnalyzer() {
       } else if (e.ctrlKey && e.key.toLowerCase() === "c") {
         const tg = await targetFor(a.selected);
         if (tg) copyText(tg.path);
+      } else if (e.ctrlKey && e.key.toLowerCase() === "x") {
+        // Cut to the Windows clipboard: pasting in Explorer moves the file.
+        e.preventDefault();
+        const tg = await targetFor(a.selected);
+        if (tg) {
+          try {
+            await api.clipboardFiles([tg.path], true);
+            app.toast("info", t("analyzer.cutToClipboard", { name: tg.path.split("\\").pop() ?? tg.path }));
+          } catch (err) {
+            app.toastError(err);
+          }
+        }
       }
     };
     window.addEventListener("keydown", onKey);

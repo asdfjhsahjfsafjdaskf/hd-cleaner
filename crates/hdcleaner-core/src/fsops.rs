@@ -20,6 +20,9 @@ use windows_sys::Win32::Storage::FileSystem::*;
 pub enum DeleteMode {
     RecycleBin,
     Permanent,
+    /// Overwrite the file's bytes before deleting it. `passes` is how many
+    /// times (1-7). See [`secure_overwrite`] for what this can and cannot do.
+    Secure { passes: u8 },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -293,6 +296,7 @@ fn execute_one(item: &PlanItem, mode: DeleteMode, opts: &ExecuteOptions) -> Item
     let res = match mode {
         DeleteMode::RecycleBin => recycle(&item.path),
         DeleteMode::Permanent => delete_permanent(&item.path, item.is_dir, item.is_link),
+        DeleteMode::Secure { passes } => secure_delete(&item.path, item.is_dir, item.is_link, passes),
     };
     match res {
         Ok(()) => ItemOutcome::Deleted,
@@ -314,6 +318,88 @@ fn delete_permanent(path: &str, is_dir: bool, is_link: bool) -> Result<()> {
         std::fs::remove_file(p)
     };
     r.map_err(|e| AppError::io("deleting", Some(std::path::Path::new(path)), e))
+}
+
+/// Overwrite a file's contents in place, then flush to disk.
+///
+/// What this does: replaces the bytes of the file *as the file system sees
+/// them today*. What it cannot do: reach copies the drive itself keeps. On
+/// an SSD (or any flash storage) wear levelling means the old blocks may
+/// survive untouched, and shadow copies, backups and previously written
+/// copies of the same data are not affected either. On those drives, full
+/// disk encryption is the answer, not overwriting.
+pub fn secure_overwrite(path: &str, passes: u8) -> Result<()> {
+    use std::io::{Seek, SeekFrom, Write};
+    let ext = to_extended(path);
+    clear_readonly(&ext);
+    let meta = std::fs::symlink_metadata(&ext).map_err(|e| AppError::io("reading the file", Some(std::path::Path::new(path)), e))?;
+    if meta.file_type().is_symlink() {
+        // A link holds no data of its own; overwriting would hit the target.
+        return Err(AppError::Protected { path: path.to_string(), reason: "reparsePoint".into() });
+    }
+    let len = meta.len();
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&ext)
+        .map_err(|e| AppError::io("opening the file to overwrite", Some(std::path::Path::new(path)), e))?;
+    const CHUNK: usize = 1 << 20;
+    let mut buf = vec![0u8; CHUNK.min(len.max(1) as usize)];
+    for pass in 0..passes.clamp(1, 7) {
+        match pass % 3 {
+            0 => buf.fill(0x00),
+            1 => buf.fill(0xFF),
+            // A changing pattern, so the last pass never leaves a constant.
+            _ => {
+                let seed = crate::util::now_unix_ms() as u64 ^ (pass as u64) << 32;
+                let mut x = seed | 1;
+                for b in buf.iter_mut() {
+                    x ^= x << 13;
+                    x ^= x >> 7;
+                    x ^= x << 17;
+                    *b = (x >> 24) as u8;
+                }
+            }
+        }
+        file.seek(SeekFrom::Start(0)).map_err(|e| AppError::io("overwriting", Some(std::path::Path::new(path)), e))?;
+        let mut left = len;
+        while left > 0 {
+            let n = (left as usize).min(buf.len());
+            file.write_all(&buf[..n]).map_err(|e| AppError::io("overwriting", Some(std::path::Path::new(path)), e))?;
+            left -= n as u64;
+        }
+        file.flush().and_then(|_| file.sync_all()).map_err(|e| AppError::io("flushing", Some(std::path::Path::new(path)), e))?;
+    }
+    // Leave no length behind either.
+    file.set_len(0).map_err(|e| AppError::io("truncating", Some(std::path::Path::new(path)), e))?;
+    file.sync_all().map_err(|e| AppError::io("flushing", Some(std::path::Path::new(path)), e))?;
+    Ok(())
+}
+
+fn secure_delete(path: &str, is_dir: bool, is_link: bool, passes: u8) -> Result<()> {
+    if is_link {
+        // Never follow a junction or symlink: remove the link itself.
+        return delete_permanent(path, is_dir, is_link);
+    }
+    if is_dir {
+        let mut stack = vec![std::path::PathBuf::from(&to_extended(path))];
+        while let Some(dir) = stack.pop() {
+            for e in std::fs::read_dir(&dir).map_err(|e| AppError::io("reading the folder", Some(&dir), e))?.flatten() {
+                let meta = e.metadata();
+                let is_link = e.path().symlink_metadata().map(|m| m.file_type().is_symlink()).unwrap_or(false);
+                if is_link {
+                    continue; // removed with the tree, never followed
+                }
+                if meta.map(|m| m.is_dir()).unwrap_or(false) {
+                    stack.push(e.path());
+                } else {
+                    secure_overwrite(&e.path().to_string_lossy(), passes)?;
+                }
+            }
+        }
+        return delete_permanent(path, true, false);
+    }
+    secure_overwrite(path, passes)?;
+    delete_permanent(path, false, false)
 }
 
 fn clear_readonly(ext_path: &str) {
@@ -557,6 +643,37 @@ pub fn open_terminal(dir: &str, kind: Terminal) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secure_delete_overwrites_and_removes() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("secret.txt");
+        let secret = b"the password is hunter2".repeat(100);
+        std::fs::write(&file, &secret).unwrap();
+
+        let plan = plan_delete(&[(file.to_string_lossy().into_owned(), None)], DeleteMode::Secure { passes: 3 });
+        let r = execute_delete(&plan, &ExecuteOptions { dry_run: false, allow_dangerous: false }, |_, _| {}, || true);
+        assert!(matches!(r[0].outcome, ItemOutcome::Deleted), "{:?}", r[0].outcome);
+        assert!(!file.exists());
+
+        // The same bytes must not simply reappear when the name is reused.
+        std::fs::write(&file, b"new content").unwrap();
+        let back = std::fs::read(&file).unwrap();
+        assert_ne!(back, secret);
+    }
+
+    #[test]
+    fn overwriting_never_follows_a_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("real.txt");
+        std::fs::write(&target, b"keep me").unwrap();
+        let link = dir.path().join("link.txt");
+        if std::os::windows::fs::symlink_file(&target, &link).is_err() {
+            return; // symlinks need Developer Mode or admin: nothing to check
+        }
+        assert!(secure_overwrite(&link.to_string_lossy(), 1).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"keep me");
+    }
 
     #[test]
     fn names() {

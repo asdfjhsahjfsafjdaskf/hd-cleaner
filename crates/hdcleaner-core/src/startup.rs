@@ -117,6 +117,51 @@ fn now_filetime() -> u64 {
     crate::util::unix_ms_to_filetime(crate::util::now_unix_ms())
 }
 
+/// The Run value name this app uses for itself.
+pub const SELF_RUN_VALUE: &str = "HD Cleaner";
+
+/// Is this app set to start with Windows (and with which command)?
+pub fn self_startup() -> Option<String> {
+    crate::registry::read_string(
+        Hive::CurrentUser,
+        r"Software\Microsoft\Windows\CurrentVersion\Run",
+        SELF_RUN_VALUE,
+        crate::registry::View::Default,
+    )
+}
+
+/// Add or remove this app's own Run entry (current user only — no admin
+/// rights and nothing machine-wide).
+pub fn set_self_startup(enabled: bool) -> Result<()> {
+    use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
+    use windows_sys::Win32::System::Registry::*;
+    let exe = std::env::current_exe().map_err(|e| AppError::io("finding this program", None, e))?;
+    let command = format!("\"{}\"", exe.display());
+    let path = wide(r"Software\Microsoft\Windows\CurrentVersion\Run");
+    let mut h: HKEY = std::ptr::null_mut();
+    let rc = unsafe {
+        RegCreateKeyExW(Hive::CurrentUser.raw(), path.as_ptr(), 0, std::ptr::null(), 0, KEY_SET_VALUE, std::ptr::null(), &mut h, std::ptr::null_mut())
+    };
+    if rc != ERROR_SUCCESS {
+        return Err(AppError::from_win32(rc, "opening the Run key", Some(SELF_RUN_VALUE)));
+    }
+    let name = wide(SELF_RUN_VALUE);
+    let rc = if enabled {
+        let value = wide(&command);
+        unsafe { RegSetValueExW(h, name.as_ptr(), 0, REG_SZ, value.as_ptr() as *const u8, (value.len() * 2) as u32) }
+    } else {
+        match unsafe { RegDeleteValueW(h, name.as_ptr()) } {
+            ERROR_FILE_NOT_FOUND => ERROR_SUCCESS,
+            other => other,
+        }
+    };
+    unsafe { RegCloseKey(h) };
+    if rc != ERROR_SUCCESS {
+        return Err(AppError::from_win32(rc, "writing the Run entry", Some(SELF_RUN_VALUE)));
+    }
+    Ok(())
+}
+
 /// Write one StartupApproved value. Only the three fixed keys can be written.
 pub fn set_approved(hive: Hive, key: ApprovedKey, name: &str, enabled: bool) -> Result<()> {
     use windows_sys::Win32::Foundation::ERROR_SUCCESS;

@@ -178,7 +178,7 @@ export interface PlanItem {
   error?: ErrorPayload | null;
 }
 
-export type DeleteMode = "recycleBin" | "permanent";
+export type DeleteMode = "recycleBin" | "permanent" | { secure: { passes: number } };
 
 export interface DeletePlan {
   id: string;

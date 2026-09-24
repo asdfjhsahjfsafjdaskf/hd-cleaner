@@ -42,6 +42,9 @@ Windows APIs (windows-sys / windows-rs), sistema de arquivos, Registro
 | `correlate` | De quem é esta pasta: sinais nomeados (local registrado, rastro, processo, atalho, fabricante, nome) com nota 0-100 |
 | `appanalysis` | Processos, inicialização, chaves e caches de um programa; base do painel e do Uninstall Impact |
 | `smartstorage` | Jogos lidos dos arquivos dos launchers (Steam/Epic/Riot) e caches com o dono identificado |
+| `fileinfo` | Dono do arquivo e assinatura Authenticode (embutida ou por catálogo do Windows) |
+| `extensions` | Extensões de navegador lidas dos arquivos do próprio navegador |
+| `clipboard` | Arquivos na área de transferência do Windows (recortar/copiar para o Explorer) |
 | `report` | Relatório de armazenamento em HTML autocontido (sem scripts nem recursos externos) |
 | `timeline` | Tamanho de uma pasta ao longo dos snapshots salvos; pasta ausente nunca vira zero |
 | `backups` | O que foi salvo antes de remover: manifesto, quarentena, restauração (nunca sobrescreve) e exclusão |
@@ -114,19 +117,20 @@ Legenda: ✅ implementado e testado · 🟡 parcial · ⛔ não implementado (ma
 | Tamanho real (17), App Storage Map (40/66-B), identificar programa (40) | ✅ | Instalação/dados/cache/logs; locais Confirmado / Provável / Possivelmente relacionado com motivo; usa varredura carregada quando existe; "Ver no mapa do disco" destaca as pastas no treemap; "Identificar programa instalado" no menu e no painel de detalhes |
 | Desinstalação normal + busca de sobras (18–19) | ✅ | Assistente completo, 3 níveis com confiança/motivo, backup .reg, Lixeira, dry run, UAC único via helper `apply-ops`, CLI `hdcleaner uninstall`; teste de ponta a ponta com programa falso |
 | Forçada, lote, rápida (20–22) | ✅ | Forçada por nome/.exe/pasta com correspondência a programas registrados e encerramento revalidado de processos; lote sequencial com UAC único; rápida remove só o inequívoco (Seguro, ≥ 90%, não compartilhado). CLI `hdcleaner uninstall --forced` |
-| Windows Apps (23), extensões de navegador (24) | ⛔ | |
+| Windows Apps (23), extensões de navegador (24) | ✅ | `appx.rs` (listar, reparar por re-registro, remover para o usuário ou para todos; componentes do Windows recusados no app e no helper) e `extensions.rs` (manifest/Preferences do Chromium e extensions.json do Firefox; remoção só com o navegador fechado) |
 | Target Mode (25), gerenciador de processos (26), inicialização (27) | ✅ | `target.rs` (camada de mira + moldura, UWP via ApplicationFrameHost), `processes.rs` (amostragem de CPU, dono, árvore reverificada), `startup.rs` (StartupApproved/tarefa/serviço; remover com backup). `bootperf.rs` (impacto medido pelo Windows, log Diagnostics-Performance via helper); ícones da bandeja no Windows 10 (Windows 11: não suportado) |
 | Monitor de instalação, traces (28–29) | ✅ | `monitor.rs`: retrato antes/depois (pastas até 12 níveis, Registro nas áreas relevantes, serviços, tarefas, programas) + `ReadDirectoryChangesW` durante a instalação; comparação gera o rastro, que separa o que é do programa do que outro programa escreveu no mesmo período. Rastros no banco (`install_traces`, `install_trace_files`, `install_trace_registry`), com exportar/importar/excluir; `leftovers::from_trace` alimenta a desinstalação (só itens relacionados, sem duplicar as regras) |
 | Backups/quarentena/ponto de restauração (30) | ✅ | `backups.rs`: manifesto por operação, quarentena de arquivos pequenos antes da remoção, listagem, restauração que nunca sobrescreve e exclusão; `regops::import` devolve valores do Registro sob a mesma allowlist da exclusão. Ponto de restauração oferecido antes de limpezas grandes; restaurações vão para o histórico |
 | Cleaner, browser cleaner, itens recentes (31–33) | ✅ | `cleaner.rs`: catálogo de categorias, análise que só lista, limpeza restrita aos itens analisados e inalterados, junções nunca seguidas, temporários só com mais de 24 h, app/navegador aberto bloqueia, backup .reg das listas do Registro, categorias do Windows analisadas e limpas pelo helper. Firefox: histórico e downloads removidos linha a linha do places.sqlite (favoritos mantidos, banco copiado antes); Lixeira item a item com o caminho original; caches de aplicativos descobertos automaticamente; botão para fechar o programa aberto (WM_CLOSE, nunca forçado) |
 | Ferramentas do Windows (34) | ✅ | |
-| Secure delete, wipe de espaço livre (35–36) | ⛔ | |
+| Secure delete (35) | ✅ | `DeleteMode::Secure { passes }`: 1-7 sobrescritas antes de apagar, links nunca seguidos, aviso explícito de SSD na tela e na CLI |
+| Wipe de espaço livre (36) | ⛔ | |
 | Protection Engine, classificação de risco, dry run (37–39) | ✅ | |
 | App analyzer completo (42) | ✅ | Painel em Programas: processos rodando de dentro das pastas do programa, inicialização relacionada, chaves do Registro, caches com ação de limpar e desabilitar inicialização |
 | Smart storage (41) | 🟡 | Categorias levam à busca filtrada; jogos lidos dos launchers (Steam/Epic/Riot) no Painel e na CLI; caches ligados ao programa que os criou. Falta relacionar arquivo a arquivo na file view |
 | Monitoramento incremental (43) | ⛔ | |
 | Histórico (50), configurações (51), i18n pt-BR/en (52) | ✅ | |
-| Acessibilidade/atalhos (53–54) | 🟡 | Teclado nas tabelas, menus e diálogos; Ctrl+F, F5, Del, Shift+Del, F2, Ctrl+C, Ctrl+L, Esc; escala de fonte. Ctrl+H/Ctrl+X ainda não |
+| Acessibilidade/atalhos (53–54) | 🟡 | Teclado nas tabelas, menus e diálogos; Ctrl+F, F5, Del, Shift+Del, F2, Ctrl+C, Ctrl+L, Ctrl+X (recorte para o Explorer), Ctrl+H (histórico), Esc; escala de fonte. Falta a revisão com leitor de tela e os testes de DPI |
 | Menu de contexto do Explorer (55), relatório HTML (56), updater (63) | ⛔ | |
 | Assinaturas Authenticode / proprietário no painel de detalhes (67–68) | ⛔ | Marcado na UI |
 | Correlação com apps instalados (69) | 🟡 | Por pasta registrada, pasta do desinstalador e identidade de pacote; demais sinais (atalhos, processos, traces) nas próximas fases |

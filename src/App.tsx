@@ -91,6 +91,19 @@ export default function App() {
     init();
   }, [init]);
 
+  // Ctrl+H opens the history of everything this app did.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName);
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "h" && !typing) {
+        e.preventDefault();
+        useApp.getState().navigate("history");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   if (!settingsLoaded) return null;
 
   let content;

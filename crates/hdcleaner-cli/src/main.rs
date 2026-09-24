@@ -106,6 +106,10 @@ enum Cmd {
         paths: Vec<String>,
         #[arg(long)]
         permanent: bool,
+        /// Overwrite each file N times before deleting it (1-7). Read the
+        /// warning it prints: on flash storage this promises less than it seems.
+        #[arg(long, value_name = "PASSES")]
+        secure: Option<u8>,
         #[arg(long)]
         confirm: bool,
         #[arg(long)]
@@ -496,12 +500,22 @@ not enough snapshots to show a change");
                 }
             }
         }
-        Cmd::Delete { paths, permanent, confirm, dry_run, allow_dangerous } => {
+        Cmd::Delete { paths, permanent, secure, confirm, dry_run, allow_dangerous } => {
             use hdcleaner_core::fsops::*;
             if paths.is_empty() {
                 bail!("no paths given");
             }
-            let mode = if permanent { DeleteMode::Permanent } else { DeleteMode::RecycleBin };
+            let mode = match (secure, permanent) {
+                (Some(passes), _) => {
+                    eprintln!(
+                        "secure delete: {passes} pass(es) over each file. This replaces what the file system holds now;
+                         on an SSD wear levelling can leave the old blocks readable, and backups or shadow copies are untouched."
+                    );
+                    DeleteMode::Secure { passes }
+                }
+                (None, true) => DeleteMode::Permanent,
+                _ => DeleteMode::RecycleBin,
+            };
             let items: Vec<(String, Option<u64>)> = paths.iter().map(|p| (p.clone(), None)).collect();
             let plan = plan_delete(&items, mode);
             println!("plan ({:?}):", mode);

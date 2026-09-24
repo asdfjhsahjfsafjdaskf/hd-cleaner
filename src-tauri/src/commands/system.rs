@@ -234,6 +234,30 @@ pub async fn startup_set_enabled(app: AppHandle, id: String, command: String, en
     .await?
 }
 
+/// Is HD Cleaner itself set to start with Windows?
+#[tauri::command]
+pub fn start_with_windows() -> bool {
+    startup::self_startup().is_some()
+}
+
+/// Add or remove this app's own Run entry (current user only).
+#[tauri::command]
+pub async fn set_start_with_windows(app: AppHandle, enabled: bool) -> CmdResult<()> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        let r = startup::set_self_startup(enabled);
+        let _ = state.db.lock().record_operation(
+            "startup-self",
+            if r.is_ok() { "completed" } else { "failed" },
+            if enabled { "on" } else { "off" },
+            1,
+            &serde_json::json!({ "enabled": enabled, "error": r.as_ref().err().map(|e| e.to_payload()) }),
+        );
+        r.ui()
+    })
+    .await?
+}
+
 /// Remove an entry (backup first). Returns the backup folder.
 #[tauri::command]
 pub async fn startup_remove(app: AppHandle, id: String, command: String) -> CmdResult<String> {

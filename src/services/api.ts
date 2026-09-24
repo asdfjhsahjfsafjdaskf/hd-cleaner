@@ -133,6 +133,8 @@ export const api = {
   processDetails: (pid: number) => invoke<ProcessDetails>("process_details", { pid }),
   processEnd: (pid: number, path: string | null | undefined, tree: boolean, elevated: boolean) => invoke<TreeKill[]>("process_end", { pid, path: path ?? null, tree, elevated }),
   fileIcon: (path: string) => invoke<ArrayBuffer>("file_icon", { path }),
+  startWithWindows: () => invoke<boolean>("start_with_windows"),
+  setStartWithWindows: (enabled: boolean) => invoke<void>("set_start_with_windows", { enabled }),
   startupList: () => invoke<StartupItem[]>("startup_list"),
   startupSetEnabled: (id: string, command: string, enabled: boolean) => invoke<void>("startup_set_enabled", { id, command, enabled }),
   startupRemove: (id: string, command: string) => invoke<string>("startup_remove", { id, command }),
@@ -149,6 +151,7 @@ export const api = {
   traceImport: (path: string, suffix: string) => invoke<InstallTrace>("trace_import", { path, suffix }),
 
   fileInfo: (path: string) => invoke<FileInfo>("file_info", { path }),
+  clipboardFiles: (paths: string[], cut: boolean) => invoke<void>("clipboard_files", { paths, cut }),
   extensionsList: () => invoke<BrowserExtension[]>("extensions_list"),
   extensionRemove: (id: string, browser: string, recycle: boolean) => invoke<void>("extension_remove", { id, browser, recycle }),
   windowsAppsList: (measure: boolean) => invoke<WindowsApp[]>("windows_apps_list", { measure }),

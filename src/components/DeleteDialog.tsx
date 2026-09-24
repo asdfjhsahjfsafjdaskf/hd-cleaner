@@ -23,6 +23,7 @@ export function DeleteDialog() {
   const [ack, setAck] = useState(false);
   const [running, setRunning] = useState<{ done: number; total: number }>();
   const [summary, setSummary] = useState<DeleteSummary>();
+  const [onSsd, setOnSsd] = useState(false);
 
   useEffect(() => {
     if (!req) return;
@@ -39,6 +40,17 @@ export function DeleteDialog() {
     setError(undefined);
     api.planDelete(req.scanId, req.targets, mode).then(setPlan).catch((e) => setError(toError(e)));
   }, [req, mode]);
+
+  // Overwriting cannot promise anything on flash storage, so the dialog says
+  // which kind of drive these files are on.
+  useEffect(() => {
+    const path = plan?.items[0]?.path ?? "";
+    const letter = path.slice(0, 2).toUpperCase();
+    if (!letter.endsWith(":")) return;
+    api.listDrives()
+      .then((drives) => setOnSsd(drives.some((d) => d.letter.toUpperCase().startsWith(letter) && d.media === "ssd")))
+      .catch(() => {});
+  }, [plan]);
 
   if (!req) return null;
 
@@ -67,7 +79,8 @@ export function DeleteDialog() {
     closeDelete();
   };
 
-  const title = mode === "permanent" ? t("deleteDialog.titlePermanent") : t("deleteDialog.titleRecycle");
+  const secure = typeof mode === "object";
+  const title = mode === "permanent" || secure ? t("deleteDialog.titlePermanent") : t("deleteDialog.titleRecycle");
 
   if (summary) {
     return (
@@ -101,7 +114,7 @@ export function DeleteDialog() {
   return (
     <Modal
       title={title}
-      icon={<Trash2 size={18} color={mode === "permanent" ? "var(--danger)" : "var(--text-muted)"} />}
+      icon={<Trash2 size={18} color={mode === "permanent" || secure ? "var(--danger)" : "var(--text-muted)"} />}
       onClose={close}
       wide
       locked={!!running}
@@ -121,11 +134,35 @@ export function DeleteDialog() {
         <div className="seg" role="radiogroup">
           <button className={mode === "recycleBin" ? "on" : ""} onClick={() => setMode("recycleBin")} disabled={!!running}>{t("deleteDialog.modeRecycle")}</button>
           <button className={mode === "permanent" ? "on" : ""} onClick={() => setMode("permanent")} disabled={!!running}>{t("deleteDialog.modePermanent")}</button>
+          <button className={secure ? "on" : ""} onClick={() => setMode({ secure: { passes: 3 } })} disabled={!!running}>{t("deleteDialog.modeSecure")}</button>
         </div>
+        {secure && (
+          <div className="row" style={{ gap: "0.4rem" }}>
+            <span className="muted">{t("deleteDialog.passes")}</span>
+            <div className="seg">
+              {[1, 3, 7].map((n) => (
+                <button
+                  key={n}
+                  className={typeof mode === "object" && mode.secure.passes === n ? "on" : ""}
+                  onClick={() => setMode({ secure: { passes: n } })}
+                  disabled={!!running}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {plan && <strong>{t("deleteDialog.total", { n: actionable.length, size: formatBytes(actionable.reduce((a, i) => a + i.size, 0)) })}</strong>}
       </div>
-      {mode === "permanent" && !dryRun && (
+      {(mode === "permanent" || secure) && !dryRun && (
         <div className="banner warning"><AlertTriangle size={17} color="var(--warning)" /><span>{t("deleteDialog.permanentWarning")}</span></div>
+      )}
+      {secure && (
+        <div className="banner warning col" style={{ alignItems: "stretch" }}>
+          <span>{t("deleteDialog.secureExplain")}</span>
+          {onSsd && <strong>{t("deleteDialog.secureSsd")}</strong>}
+        </div>
       )}
       {error && <ErrorView error={error} />}
       {!plan && !error && <div className="muted">{t("common.loading")}</div>}

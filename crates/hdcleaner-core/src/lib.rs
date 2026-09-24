@@ -12,6 +12,7 @@ pub mod bootperf;
 pub mod branding;
 pub mod category;
 pub mod cleaner;
+pub mod clipboard;
 pub mod correlate;
 pub mod db;
 pub mod diff;

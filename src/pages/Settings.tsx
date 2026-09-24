@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { api } from "../services/api";
 import { Switch } from "../components/ui";
 import { useT } from "../i18n";
 import { useApp } from "../stores/app";
@@ -19,7 +20,25 @@ function Row({ label, desc, children, disabled }: { label: string; desc?: string
 
 export function Settings() {
   const t = useT();
-  const { settings: s, setSetting, info } = useApp();
+  const app = useApp();
+  const { settings: s, setSetting, info } = app;
+  // Read from the registry, not from the app's own settings: the entry can be
+  // changed from outside (the Startup page, Task Manager, Windows itself).
+  const [autoStart, setAutoStart] = useState<boolean>();
+  useEffect(() => {
+    api.startWithWindows().then(setAutoStart).catch(() => setAutoStart(false));
+  }, []);
+
+  const toggleAutoStart = async (v: boolean) => {
+    setAutoStart(v);
+    try {
+      await api.setStartWithWindows(v);
+    } catch (e) {
+      setAutoStart(!v);
+      app.toastError(e);
+    }
+  };
+
   return (
     <div className="page" style={{ maxWidth: "58rem" }}>
       <div className="page-header"><h1>{t("settings.title")}</h1></div>
@@ -48,7 +67,9 @@ export function Settings() {
             ))}
           </div>
         </Row>
-        <Row label={t("settings.startWithWindows")} disabled><Switch checked={false} disabled onChange={() => {}} label={t("settings.startWithWindows")} /></Row>
+        <Row label={t("settings.startWithWindows")} desc={t("settings.startWithWindowsDesc")}>
+          <Switch checked={autoStart ?? false} disabled={autoStart === undefined} onChange={(v) => void toggleAutoStart(v)} label={t("settings.startWithWindows")} />
+        </Row>
         <Row label={t("settings.checkUpdates")} disabled><Switch checked={false} disabled onChange={() => {}} label={t("settings.checkUpdates")} /></Row>
         <Row label={t("settings.explorerMenu").replace("…", "HD Cleaner")} disabled><Switch checked={false} disabled onChange={() => {}} label={t("settings.explorerMenu")} /></Row>
       </div>
