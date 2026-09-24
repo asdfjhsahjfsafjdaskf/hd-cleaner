@@ -38,7 +38,7 @@ pub struct ProcessDetails {
     pub children: usize,
 }
 
-fn disabled_services(state: &AppState) -> Vec<String> {
+pub(crate) fn disabled_services(state: &AppState) -> Vec<String> {
     startup::disabled_services(&state.db.lock())
 }
 

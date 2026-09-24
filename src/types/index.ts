@@ -706,3 +706,61 @@ export interface Timeline {
   days: number;
   unreadable: number;
 }
+
+// ---- app analysis (Programs panel) -----------------------------------------
+
+export interface RelatedProcess {
+  pid: number;
+  name: string;
+  path?: string | null;
+  signals: string[];
+}
+
+export interface RelatedRegistry {
+  path: string;
+  kind: "uninstall" | "vendor" | "startup";
+}
+
+export interface RelatedCache {
+  id: string;
+  label: string;
+  owner?: string | null;
+  count: number;
+  bytes: number;
+  /** The app is open: the Cleaner refuses to touch it. */
+  running: boolean;
+  admin: boolean;
+}
+
+export interface AppAnalysis {
+  programId: string;
+  processes: RelatedProcess[];
+  startup: StartupItem[];
+  registry: RelatedRegistry[];
+  caches: RelatedCache[];
+  shortcuts: string[];
+  extraLocations: string[];
+}
+
+export interface UninstallImpact {
+  size: AppSize;
+  running: number;
+  startupEntries: number;
+  shortcuts: number;
+  registryKeys: number;
+  /** Folders outside the install location: the official uninstaller often leaves these. */
+  otherLocations: string[];
+}
+
+export interface Game {
+  name: string;
+  /** "steam" | "epic" | "riot" */
+  launcher: string;
+  path: string;
+  /** What the launcher itself reports. */
+  reportedBytes?: number | null;
+  /** Measured by walking the folder, when asked for. */
+  bytes?: number | null;
+  id?: string | null;
+  exists: boolean;
+}

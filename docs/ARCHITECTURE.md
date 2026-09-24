@@ -39,6 +39,9 @@ Windows APIs (windows-sys / windows-rs), sistema de arquivos, Registro
 | `fsops` | Plano de exclusão com *fingerprint* → reverificação → Lixeira (`IFileOperation`) ou permanente; renomear sem sobrescrever; abrir, Explorer, propriedades, terminal |
 | `elevation` | Helper elevado de superfície mínima via UAC + named pipe (`scan-ntfs`, `apply-ops` com operações tipadas e revalidadas) |
 | `uninstall`, `leftovers`, `regops`, `shortcuts`, `sysitems` | Desinstalador oficial com espera da árvore de processos; motor de sobras; backup .reg + allowlist de exclusão no Registro; alvos de .lnk; Run/serviços/tarefas |
+| `correlate` | De quem é esta pasta: sinais nomeados (local registrado, rastro, processo, atalho, fabricante, nome) com nota 0-100 |
+| `appanalysis` | Processos, inicialização, chaves e caches de um programa; base do painel e do Uninstall Impact |
+| `smartstorage` | Jogos lidos dos arquivos dos launchers (Steam/Epic/Riot) e caches com o dono identificado |
 | `report` | Relatório de armazenamento em HTML autocontido (sem scripts nem recursos externos) |
 | `timeline` | Tamanho de uma pasta ao longo dos snapshots salvos; pasta ausente nunca vira zero |
 | `backups` | O que foi salvo antes de remover: manifesto, quarentena, restauração (nunca sobrescreve) e exclusão |
@@ -106,7 +109,7 @@ Legenda: ✅ implementado e testado · 🟡 parcial · ⛔ não implementado (ma
 | Duplicados (12) | ✅ | Seleção inteligente só pré-seleciona; impede excluir todas as cópias de um grupo |
 | Gerenciamento de arquivos (13) | 🟡 | Abrir, renomear, copiar/mover (diálogo nativo do shell), Lixeira, permanente, copiar caminho, propriedades, terminal/PowerShell. Fila visual de operações longas ainda não |
 | Exportação CSV/JSON, snapshots, comparação (14) | ✅ | Export/import da MFT bruta não |
-| CLI (15) | ✅ | `drives scan largest search duplicates export (csv/json/html) timeline diff delete programs uninstall startup processes kill cleanup` |
+| CLI (15) | ✅ | `drives scan largest search duplicates export (csv/json/html) timeline games diff delete programs uninstall startup processes kill cleanup` |
 | Programas instalados (16) | ✅ | HKLM 64/32 + HKCU, MSI, AppX/MSIX/Store (WinRT, sem admin); ícones (DisplayIcon → desinstalador → .ico/.exe da pasta); oculta componentes de sistema/updates/frameworks por padrão; busca, filtros, ordenação; CLI `hdcleaner programs [--sizes]` |
 | Tamanho real (17), App Storage Map (40/66-B), identificar programa (40) | ✅ | Instalação/dados/cache/logs; locais Confirmado / Provável / Possivelmente relacionado com motivo; usa varredura carregada quando existe; "Ver no mapa do disco" destaca as pastas no treemap; "Identificar programa instalado" no menu e no painel de detalhes |
 | Desinstalação normal + busca de sobras (18–19) | ✅ | Assistente completo, 3 níveis com confiança/motivo, backup .reg, Lixeira, dry run, UAC único via helper `apply-ops`, CLI `hdcleaner uninstall`; teste de ponta a ponta com programa falso |
@@ -119,8 +122,8 @@ Legenda: ✅ implementado e testado · 🟡 parcial · ⛔ não implementado (ma
 | Ferramentas do Windows (34) | ✅ | |
 | Secure delete, wipe de espaço livre (35–36) | ⛔ | |
 | Protection Engine, classificação de risco, dry run (37–39) | ✅ | |
-| App analyzer completo (42) | 🟡 | Tamanho real + locais prontos; processos, inicialização e Registro relacionado virão com as fases 6–8 |
-| Smart storage (41) | 🟡 | Categorias no dashboard levam à busca filtrada |
+| App analyzer completo (42) | ✅ | Painel em Programas: processos rodando de dentro das pastas do programa, inicialização relacionada, chaves do Registro, caches com ação de limpar e desabilitar inicialização |
+| Smart storage (41) | 🟡 | Categorias levam à busca filtrada; jogos lidos dos launchers (Steam/Epic/Riot) no Painel e na CLI; caches ligados ao programa que os criou. Falta relacionar arquivo a arquivo na file view |
 | Monitoramento incremental (43) | ⛔ | |
 | Histórico (50), configurações (51), i18n pt-BR/en (52) | ✅ | |
 | Acessibilidade/atalhos (53–54) | 🟡 | Teclado nas tabelas, menus e diálogos; Ctrl+F, F5, Del, Shift+Del, F2, Ctrl+C, Ctrl+L, Esc; escala de fonte. Ctrl+H/Ctrl+X ainda não |
@@ -144,5 +147,5 @@ Dados locais: `%LOCALAPPDATA%\HDCleaner` (`hdcleaner.db`, `logs\`, `snapshots\`)
 
 ## 6. Próximos passos (roteiro)
 
-1. Fase 13: App Analyzer completo, Uninstall Impact e Smart Storage.
+1. Fase 14: desempenho, Windows Apps, extensões de navegador, instaladores e acabamento.
 2. Monitoramento incremental (`ReadDirectoryChangesW`/USN Journal) e colunas de duplicados na file view.

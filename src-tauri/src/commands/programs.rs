@@ -164,6 +164,75 @@ pub struct MapTargets {
 }
 
 /// Nodes of a loaded scan that belong to the program (App Storage Map).
+/// Games the installed launchers report, from their own files. `measure`
+/// walks each folder (slow), otherwise the launcher's own number is used.
+#[tauri::command]
+pub async fn games_list(measure: bool) -> CmdResult<Vec<hdcleaner_core::smartstorage::Game>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut games = hdcleaner_core::smartstorage::games();
+        if measure {
+            hdcleaner_core::smartstorage::measure(&mut games, &|| false);
+        }
+        games
+    })
+    .await
+    .map_err(|e| AppError::Helper(e.to_string()).to_payload())
+}
+
+/// Everything known about one program: what is running, what it starts at
+/// logon, its registry keys and the caches it leaves behind. Read-only.
+#[tauri::command]
+pub async fn app_analysis(app: AppHandle, id: String) -> CmdResult<hdcleaner_core::appanalysis::AppAnalysis> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (list, _) = load(&state, false);
+        let program = list.iter().find(|p| p.id == id).cloned().ok_or_else(|| AppError::NotFound { path: id.clone() }.to_payload())?;
+        let others: Vec<Program> = list.iter().filter(|p| p.id != id).cloned().collect();
+        let procs = hdcleaner_core::processes::list();
+        let startup = hdcleaner_core::startup::list(&crate::commands::system::disabled_services(&state));
+        let caches = hdcleaner_core::appanalysis::cache_analysis(&program);
+        Ok(hdcleaner_core::appanalysis::analyze(&program, &others, &procs, &startup, &caches))
+    })
+    .await
+    .map_err(|e| AppError::Helper(e.to_string()).to_payload())?
+}
+
+/// Clean one of the caches listed by [`app_analysis`]. The items are analyzed
+/// again right before removal, so only what is still there is touched.
+#[tauri::command]
+pub async fn app_clean_cache(app: AppHandle, id: String, category: String, dry_run: bool) -> CmdResult<hdcleaner_core::cleaner::CleanOutcome> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (list, _) = load(&state, false);
+        let program = list.iter().find(|p| p.id == id).cloned().ok_or_else(|| AppError::NotFound { path: id.clone() }.to_payload())?;
+        let analysis = hdcleaner_core::appanalysis::cache_analysis(&program);
+        let r = analysis
+            .iter()
+            .find(|r| r.category.id == category)
+            .ok_or_else(|| AppError::InvalidInput(format!("{category} is not a cache of this program")).to_payload())?;
+        if r.running {
+            return Err(AppError::InvalidInput(format!("{} is open", r.category.owner.clone().unwrap_or_else(|| program.name.clone()))).to_payload());
+        }
+        let backup = state
+            .data_dir
+            .join("backups")
+            .join(format!("{}-cleanup", hdcleaner_core::util::now_unix_ms()));
+        let outcome = hdcleaner_core::cleaner::clean_category(&r.category.id, &r.items, &backup, dry_run, &mut |_| {}).ui()?;
+        if !dry_run {
+            let _ = state.db.lock().record_operation(
+                "cleanup",
+                if outcome.failed == 0 { "completed" } else { "partial" },
+                &format!("{} · {}", program.name, r.category.id),
+                outcome.removed as usize,
+                &serde_json::json!({ "program": program.id, "category": r.category.id, "freed": outcome.freed }),
+            );
+        }
+        Ok(outcome)
+    })
+    .await
+    .map_err(|e| AppError::Helper(e.to_string()).to_payload())?
+}
+
 #[tauri::command]
 pub async fn program_map_nodes(state: State<'_, AppState>, scan_id: u32, id: String) -> CmdResult<MapTargets> {
     let cached = state.program_sizes.lock().get(&id).cloned();

@@ -1,6 +1,6 @@
 # HD Cleaner — Status do projeto
 
-**Atualizado em 24/09/2026**, ao final da Fase 12 (relatório HTML, linha do tempo e CLI).
+**Atualizado em 24/09/2026**, ao final da Fase 13 (App Analyzer, Uninstall Impact e Smart Storage).
 
 Este arquivo registra **tudo o que já foi feito** e **tudo o que ainda falta**, seguindo as seções da especificação original. Nenhuma funcionalidade listada aqui como feita é simulada: todas foram compiladas, testadas por testes automatizados e, quando indicado, verificadas no app real, nesta máquina.
 
@@ -17,7 +17,7 @@ Documentos relacionados:
 |---|---|
 | Stack | Rust 1.98 (MSVC) + Tauri 2 + React 19 + TypeScript + Vite |
 | Estrutura | `crates/hdcleaner-core` (toda a lógica) · `crates/hdcleaner-cli` (binário `hdcleaner`) · `crates/test-fixtures` (programa falso de teste) · `src-tauri` (camada de comandos) · `src` (interface) |
-| Testes automatizados | **96 testes Rust + 7 testes de ponta a ponta (desinstalação normal, forçada, inicialização, árvore de processos, limpeza em sandbox, Lixeira e monitor de instalação) passando**. Os testes destrutivos usam apenas pastas temporárias ou o programa falso de teste (sob o perfil do usuário) |
+| Testes automatizados | **108 testes Rust + 7 testes de ponta a ponta (desinstalação normal, forçada, inicialização, árvore de processos, limpeza em sandbox, Lixeira e monitor de instalação) passando**. Os testes destrutivos usam apenas pastas temporárias ou o programa falso de teste (sob o perfil do usuário) |
 | Tipagem do frontend | `tsc --noEmit` sem erros |
 | Build de release | `hd-cleaner.exe` com 13,4 MB (sem instalador). Instaladores NSIS/MSI ainda não foram gerados |
 | Controle de versão | A pasta **não é um repositório git** e nenhum commit foi feito |
@@ -353,6 +353,18 @@ Os dados locais ficam em `%LOCALAPPDATA%\HDCleaner`:
 - **Verificado no PC real:** relatório gerado pela CLI e pela tela (11,5 KB, números batendo com a varredura: 441 KB, 50 arquivos, 10 pastas) e linha do tempo montada a partir de 3 snapshots reais de `C:\` (30,0 GB, 72.348 → 72.349 arquivos) em ~0,5 s, pela tela e pela CLI.
 - **Testes:** página autocontida e com escape correto; linha do tempo lendo vários snapshots (ordem por data, pasta ausente, arquivo ilegível) e o mapeamento de caminho para volume.
 
+### Fase 13 — App Analyzer, Uninstall Impact e Smart Storage
+
+- **Motor de correlação** (`correlate.rs`): responde "de quem é esta pasta?" com **sinais nomeados e nota de 0 a 100** — local registrado (100), pasta de pacote da Store (95), rastro de instalação (90), pasta do desinstalador (85), processo rodando de dentro dela (80), atalho apontando para ela (75), pasta do fabricante (55) e nome parecido (45, e só isso). Vários sinais somam um pouco, mas **só o local registrado chega a 100**: o resto para em 99, porque nome parecido nunca é prova. Testes cobrem cada caso, inclusive o de não casar nada.
+- **App Analyzer** (`appanalysis.rs` + painel em Programas): mostra, para o programa selecionado, os **processos rodando agora** (só os que rodam de dentro das pastas dele), o que ele **inicia com o Windows**, as **chaves do Registro** que são dele, os **caches** que deixa e quantos atalhos apontam para ele. Duas ações saem daí: **Limpar** um cache (passa pela mesma análise-e-limpeza do Cleaner, recusa se o app estiver aberto, e grava backup/manifesto) e **Desabilitar** um item de inicialização (mesma rota da página Inicialização).
+- **Um programa parecido não é o mesmo programa:** o cache do "Discord PTB" não entra no Discord. A correspondência por nome agora exige igualdade — o teste automatizado fixa isso, e foi um erro real pego ao rodar no PC (o painel do Discord mostrava 409 MB do PTB e 395 MB do Canary como se fossem dele).
+- **Uninstall Impact** (seção 66-C): o assistente de desinstalação agora mede **antes** de rodar qualquer coisa e mostra quanto o programa ocupa hoje, dividido em programa, dados do usuário, cache e logs, quantas pastas ficam **fora** do local de instalação (as que o desinstalador oficial costuma deixar) e quantos processos, itens de inicialização, atalhos e chaves existem.
+- **Smart Storage — Jogos** (`smartstorage.rs`): lista os jogos a partir dos **arquivos dos próprios launchers** — manifestos `.acf` do Steam (com as bibliotecas do `libraryfolders.vdf`), `LauncherInstalled.dat` da Epic e `RiotClientInstalls.json` da Riot. Nada é adivinhado por nome de pasta. Aparece no Painel com o tamanho que o launcher informa e um botão para analisar a pasta, e na CLI como `hdcleaner games [--measure]`.
+- **Caches com dono:** `smartstorage::cache_owners` liga cada cache encontrado ao programa que o criou usando o motor de correlação, com a nota e os sinais à vista.
+- **Contador de inicialização no Painel:** o cartão que dizia "não implementado" agora mostra quantos itens iniciam com o Windows e leva para a página.
+- **Verificado no PC real:** 12 jogos em 3 bibliotecas (294 GB; a biblioteca do Steam aparecia duplicada porque o Steam grava o próprio caminho em minúsculas — corrigido, com teste); Discord com 8 processos, 1 item de inicialização, 3 chaves, 1 atalho e 353 MB de cache bloqueado por estar aberto; e o Impact medindo 591 MB antes de desinstalar (fechado sem desinstalar nada).
+- **Testes:** motor de correlação (4), App Analyzer (3, incluindo o do nome parecido) e Smart Storage (5, incluindo leitura de manifesto Steam e nomes da Riot).
+
 ### Recursos das fases 11 e 12 adiantados
 
 - **Exclusão segura:**
@@ -434,19 +446,7 @@ Legenda: 🔴 não iniciado · 🟡 parcial
 - Falta:
   - exportar e importar a **MFT bruta** para análise offline — marcado como opcional na especificação e **não implementado**; a leitura da MFT continua sendo feita ao vivo, e o snapshot `.hdcs` já serve para levar uma varredura para outra máquina.
 
-### Fase 13 — Integração total analisador ↔ desinstalador 🟡 (próxima)
-
-- Já existe: tamanho real, App Storage Map, identificar programa e aplicativo relacionado.
-- Falta:
-  - **App Analyzer completo** (seção 42): processos atuais, inicialização relacionada, chaves do Registro conhecidas, "Limpar cache" (só itens classificados com segurança como cache) e "Desabilitar inicialização";
-  - **Uninstall Impact** (seção 66-C): programa, cache e dados do usuário antes de desinstalar, com o que será removido e o que será mantido;
-  - **Smart Storage** completo (seção 41):
-    - Jogos → listar os jogos (bibliotecas Steam, Epic, Riot…);
-    - Caches → mostrar qual aplicativo gerou cada cache;
-    - Aplicativos → relacionar arquivos aos programas;
-  - **Correlation engine** (seção 69) com mais sinais: atalhos, caminhos de processos, traces, fabricante e pontuação numérica.
-
-### Fase 14 — Desempenho, segurança e acabamento 🔴
+### Fase 14 — Desempenho, segurança e acabamento 🔴 (próxima)
 
 - Perfilar e reduzir cópias de strings; medir a memória em varreduras de 5 milhões ou mais de arquivos.
 - **Monitoramento incremental** do sistema de arquivos após a varredura (seção 43), com USN Journal ou `ReadDirectoryChangesW`.

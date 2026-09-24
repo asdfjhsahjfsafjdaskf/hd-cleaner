@@ -1,5 +1,5 @@
 import {
-  Boxes, ClipboardCopy, FolderOpen, FolderSearch, LayoutGrid, Play, RefreshCw, Search, Square, Trash2, Wrench, Zap,
+  Boxes, Brush, ClipboardCopy, Cpu, FolderOpen, FolderSearch, LayoutGrid, Play, Power, RefreshCw, Search, Square, Trash2, Wrench, Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ErrorView } from "../components/ErrorView";
@@ -7,12 +7,12 @@ import { copyText } from "../components/fileActions";
 import { ProgramIcon } from "../components/ProgramIcon";
 import { Switch } from "../components/ui";
 import { VirtualTable, type Column } from "../components/VirtualTable";
-import { t as tr, useT } from "../i18n";
+import { hasKey, t as tr, useT } from "../i18n";
 import { api } from "../services/api";
 import { useAnalyzer } from "../stores/analyzer";
 import { useApp } from "../stores/app";
 import { isHidden, usePrograms, type ProgramSort, type SourceFilter } from "../stores/programs";
-import type { AppSize, Program } from "../types";
+import type { AppAnalysis, AppSize, Program } from "../types";
 import { formatBytes, formatNumber } from "../utils/format";
 
 const SIZE_COLORS = { install: "#5b9be3", userData: "#9d8ff0", cache: "#b7a58c", logs: "#6fc3d6" };
@@ -173,6 +173,8 @@ function ProgramDetails({ p }: { p: Program }) {
         </>
       )}
 
+      <AppAnalyzer p={p} />
+
       <div className="section-title" style={{ marginTop: 0 }}>{t("common.details")}</div>
       <dl className="kv">
         <Field label={t("programs.installLocation")} value={p.installLocation ?? (p.inferredLocation ? `${p.inferredLocation} (${t("programs.inferred")})` : undefined)} mono />
@@ -194,6 +196,156 @@ function ProgramDetails({ p }: { p: Program }) {
         </>
       )}
     </aside>
+  );
+}
+
+/** What is running, what starts at logon, which keys and caches belong to a
+ *  program — plus the two actions that follow from it. */
+function AppAnalyzer({ p }: { p: Program }) {
+  const t = useT();
+  const app = useApp();
+  const [data, setData] = useState<AppAnalysis>();
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<Record<string, string>>({});
+
+  const load = async () => {
+    setBusy(true);
+    try {
+      setData(await api.appAnalysis(p.id));
+    } catch (e) {
+      app.toastError(e);
+    }
+    setBusy(false);
+  };
+
+  // A different program means a different picture.
+  useEffect(() => {
+    setData(undefined);
+    setDone({});
+  }, [p.id]);
+
+  const clearCache = async (id: string) => {
+    setBusy(true);
+    try {
+      const o = await api.appCleanCache(p.id, id, false);
+      setDone((d) => ({ ...d, [id]: t("programs.cacheCleared", { n: formatNumber(o.removed), size: formatBytes(o.freed) }) }));
+      app.toast("success", t("programs.cacheCleared", { n: formatNumber(o.removed), size: formatBytes(o.freed) }));
+      await load();
+    } catch (e) {
+      app.toastError(e);
+    }
+    setBusy(false);
+  };
+
+  const disableStartup = async (id: string, command: string) => {
+    setBusy(true);
+    try {
+      await api.startupSetEnabled(id, command, false);
+      app.toast("success", t("programs.startupDisabled"));
+      await load();
+    } catch (e) {
+      app.toastError(e);
+    }
+    setBusy(false);
+  };
+
+  return (
+    <>
+      <div className="section-title" style={{ marginTop: 0 }}>
+        {t("programs.analyzer")}
+      </div>
+      {!data ? (
+        <div className="card" style={{ padding: "0.7rem 0.8rem" }}>
+          <div className="muted" style={{ marginBottom: "0.5rem" }}>{t("programs.analyzerIntro")}</div>
+          <button className="btn sm" disabled={busy} onClick={() => void load()}>
+            <Search size={13} />{busy ? t("common.loading") : t("programs.analyzerRun")}
+          </button>
+        </div>
+      ) : (
+        <div className="col" style={{ gap: "0.5rem" }}>
+          <div className="card" style={{ padding: "0.6rem 0.75rem" }}>
+            <div className="row" style={{ marginBottom: "0.3rem" }}>
+              <Cpu size={14} className="muted" />
+              <strong className="grow">{t("programs.running", { n: data.processes.length })}</strong>
+              <button className="btn ghost sm icon" title={t("common.refresh")} disabled={busy} onClick={() => void load()}><RefreshCw size={13} /></button>
+            </div>
+            {data.processes.length === 0 ? (
+              <div className="faint" style={{ fontSize: "0.85rem" }}>{t("programs.notRunning")}</div>
+            ) : (
+              data.processes.slice(0, 8).map((pr) => (
+                <div key={pr.pid} className="row" style={{ gap: "0.4rem", fontSize: "0.85rem" }}>
+                  <span className="grow ellipsis" title={pr.path ?? pr.name}>{pr.name}</span>
+                  <span className="faint">PID {pr.pid}</span>
+                </div>
+              ))
+            )}
+          </div>
+
+          {data.startup.length > 0 && (
+            <div className="card" style={{ padding: "0.6rem 0.75rem" }}>
+              <div className="row" style={{ marginBottom: "0.3rem" }}>
+                <Power size={14} className="muted" />
+                <strong className="grow">{t("programs.startupEntries")}</strong>
+              </div>
+              {data.startup.map((it) => (
+                <div key={it.id} className="row" style={{ gap: "0.4rem", fontSize: "0.85rem" }}>
+                  <span className="grow ellipsis" title={it.command}>{it.name}</span>
+                  <span className={`badge ${it.enabled ? "review" : "safe"}`}>{t(it.enabled ? "startup.enabled" : "startup.disabled")}</span>
+                  {it.enabled && it.canDisable && (
+                    <button className="btn ghost sm" disabled={busy} onClick={() => void disableStartup(it.id, it.command)}>
+                      {t("programs.disableStartup")}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {data.caches.length > 0 && (
+            <div className="card" style={{ padding: "0.6rem 0.75rem" }}>
+              <div className="row" style={{ marginBottom: "0.3rem" }}>
+                <Brush size={14} className="muted" />
+                <strong className="grow">{t("programs.caches")}</strong>
+              </div>
+              {data.caches.map((c) => (
+                <div key={c.id} className="col" style={{ gap: "0.15rem", marginBottom: "0.3rem" }}>
+                  <div className="row" style={{ gap: "0.4rem", fontSize: "0.85rem" }}>
+                    <span className="grow ellipsis">{hasKey(`cleaner.cat_${c.label}`) ? t(`cleaner.cat_${c.label}`) : c.id}</span>
+                    <span className="faint">{formatNumber(c.count)}</span>
+                    <strong>{formatBytes(c.bytes)}</strong>
+                    <button className="btn ghost sm" disabled={busy || c.running || c.count === 0} onClick={() => void clearCache(c.id)}>
+                      {t("programs.clearCache")}
+                    </button>
+                  </div>
+                  {c.running && <span className="faint" style={{ fontSize: "0.78rem" }}>{t("cleaner.running", { name: c.owner ?? p.name })}</span>}
+                  {done[c.id] && <span className="faint" style={{ fontSize: "0.78rem" }}>{done[c.id]}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {data.registry.length > 0 && (
+            <div className="card" style={{ padding: "0.6rem 0.75rem" }}>
+              <strong>{t("programs.registryKeys")}</strong>
+              <div className="col mono" style={{ fontSize: "0.78rem", gap: "0.15rem", marginTop: "0.25rem" }}>
+                {data.registry.slice(0, 10).map((r) => (
+                  <span key={r.path} className="ellipsis selectable" title={r.path}>{r.path}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(data.shortcuts.length > 0 || data.extraLocations.length > 0) && (
+            <div className="card" style={{ padding: "0.6rem 0.75rem", fontSize: "0.82rem" }}>
+              {data.shortcuts.length > 0 && <div className="faint">{t("programs.shortcutsFound", { n: data.shortcuts.length })}</div>}
+              {data.extraLocations.map((d) => (
+                <div key={d} className="mono ellipsis faint" title={d}>{d}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 

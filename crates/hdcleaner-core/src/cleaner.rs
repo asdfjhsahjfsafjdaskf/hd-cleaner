@@ -48,7 +48,8 @@ pub enum Rule {
 }
 
 impl Rule {
-    fn root(&self) -> &str {
+    /// The folder the rule works in.
+    pub fn root(&self) -> &str {
         match self {
             Rule::Dir { dir, .. } | Rule::Files { dir, .. } | Rule::Match { dir, .. } => dir,
         }

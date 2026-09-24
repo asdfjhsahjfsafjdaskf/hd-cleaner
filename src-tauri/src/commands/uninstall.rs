@@ -92,6 +92,58 @@ pub async fn uninstall_prepare(state: State<'_, AppState>, id: String) -> CmdRes
     })
 }
 
+/// What uninstalling this program is about to touch: how much it takes and
+/// where, what is running, and what usually stays behind for the leftover
+/// scan. It measures now, so it is the state of this moment.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Impact {
+    pub size: hdcleaner_core::appsize::AppSize,
+    /// Processes of this program running right now.
+    pub running: usize,
+    pub startup_entries: usize,
+    pub shortcuts: usize,
+    pub registry_keys: usize,
+    /// Folders outside the install location (user data, caches): the official
+    /// uninstaller often leaves these.
+    pub other_locations: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn uninstall_impact(app: AppHandle, session_id: u32) -> CmdResult<Impact> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let program = session(&state, session_id)?.program.clone();
+        let (list, _) = crate::commands::programs::load(&state, false);
+        let others: Vec<Program> = list.iter().filter(|p| p.id != program.id).cloned().collect();
+        let roots = hdcleaner_core::appsize::Roots::load();
+        let ctl = hdcleaner_core::scan::ScanControl::new();
+        let size = hdcleaner_core::appsize::compute(&program, &roots, |path| {
+            hdcleaner_core::appsize::measure_live(path, &ctl).map(|m| (m, "live"))
+        });
+        let procs = hdcleaner_core::processes::list();
+        let startup = hdcleaner_core::startup::list(&crate::commands::system::disabled_services(&state));
+        let analysis = hdcleaner_core::appanalysis::analyze(&program, &others, &procs, &startup, &[]);
+        let install = program.install_location.clone().or_else(|| program.inferred_location.clone()).unwrap_or_default();
+        let other_locations = size
+            .locations
+            .iter()
+            .filter(|l| !install.is_empty() && !l.candidate.path.eq_ignore_ascii_case(&install))
+            .map(|l| l.candidate.path.clone())
+            .collect();
+        Ok(Impact {
+            size,
+            running: analysis.processes.len(),
+            startup_entries: analysis.startup.len(),
+            shortcuts: analysis.shortcuts.len(),
+            registry_keys: analysis.registry.len(),
+            other_locations,
+        })
+    })
+    .await
+    .map_err(|e| AppError::Helper(e.to_string()).to_payload())?
+}
+
 /// Create a System Restore point (one UAC prompt unless already elevated).
 #[tauri::command]
 pub async fn uninstall_restore_point(state: State<'_, AppState>, session_id: u32) -> CmdResult<()> {

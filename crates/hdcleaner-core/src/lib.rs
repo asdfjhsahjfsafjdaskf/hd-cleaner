@@ -4,6 +4,7 @@
 //! public functions) → system services (scan, registry, fsops...) → Win32.
 //! No destructive logic lives outside this crate.
 
+pub mod appanalysis;
 pub mod appsize;
 pub mod appx;
 pub mod backups;
@@ -11,6 +12,7 @@ pub mod bootperf;
 pub mod branding;
 pub mod category;
 pub mod cleaner;
+pub mod correlate;
 pub mod db;
 pub mod diff;
 pub mod disk;
@@ -34,6 +36,7 @@ pub mod scan;
 pub mod search;
 pub mod shortcuts;
 pub mod startup;
+pub mod smartstorage;
 pub mod stats;
 pub mod sysitems;
 pub mod system;

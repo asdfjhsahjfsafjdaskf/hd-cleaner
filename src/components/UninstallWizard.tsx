@@ -4,7 +4,7 @@ import { useT } from "../i18n";
 import { api, toError } from "../services/api";
 import { useApp } from "../stores/app";
 import { usePrograms } from "../stores/programs";
-import type { ErrorPayload, Leftover, LeftoverLevel, PreparedUninstall, RemovalSummary, RunOutcome } from "../types";
+import type { ErrorPayload, Leftover, LeftoverLevel, PreparedUninstall, RemovalSummary, RunOutcome, UninstallImpact } from "../types";
 import { formatBytes, formatDuration } from "../utils/format";
 import { ErrorView } from "./ErrorView";
 import { LeftoverList, RemovalCounts, RemovalResultList } from "./leftovers";
@@ -19,6 +19,49 @@ type Step = "loading" | "confirm" | "restorePoint" | "running" | "stillInstalled
  * (waiting for its whole process tree) → leftover scan → the user picks what
  * to remove → backup + removal → per-item result. Opened via useApp().requestUninstall.
  */
+/** What the uninstall is about to touch, measured now. */
+function ImpactCard({ impact }: { impact?: UninstallImpact }) {
+  const t = useT();
+  if (!impact) {
+    return <div className="muted row" style={{ gap: "0.4rem", fontSize: "0.85rem" }}><Loader2 size={14} className="spin" />{t("uninstall.impactLoading")}</div>;
+  }
+  const s = impact.size;
+  const rows: [string, number][] = [
+    [t("programs.install"), s.install],
+    [t("programs.userData"), s.userData],
+    [t("programs.cache"), s.cache],
+    [t("programs.logs"), s.logs],
+  ];
+  const notes = [
+    impact.running > 0 ? t("uninstall.impactRunning", { n: impact.running }) : "",
+    impact.startupEntries > 0 ? t("uninstall.impactStartup", { n: impact.startupEntries }) : "",
+    impact.shortcuts > 0 ? t("uninstall.impactShortcuts", { n: impact.shortcuts }) : "",
+    impact.registryKeys > 0 ? t("uninstall.impactRegistry", { n: impact.registryKeys }) : "",
+  ].filter(Boolean);
+  return (
+    <div className="card" style={{ padding: "0.7rem 0.9rem" }}>
+      <div className="row" style={{ marginBottom: "0.4rem" }}>
+        <strong className="grow">{t("uninstall.impactTitle")}</strong>
+        <strong>{formatBytes(s.total)}</strong>
+      </div>
+      <div className="col" style={{ gap: "0.15rem", fontSize: "0.85rem" }}>
+        {rows.filter(([, v]) => v > 0).map(([label, v]) => (
+          <div key={label} className="row" style={{ gap: "0.5rem" }}>
+            <span className="grow">{label}</span>
+            <span>{formatBytes(v)}</span>
+          </div>
+        ))}
+      </div>
+      {impact.otherLocations.length > 0 && (
+        <div className="faint" style={{ fontSize: "0.8rem", marginTop: "0.4rem" }}>
+          {t("uninstall.impactKept", { n: impact.otherLocations.length })}
+        </div>
+      )}
+      {notes.length > 0 && <div className="faint" style={{ fontSize: "0.8rem", marginTop: "0.3rem" }}>{notes.join(" · ")}</div>}
+    </div>
+  );
+}
+
 export function UninstallWizard() {
   const t = useT();
   const { uninstallRequest: req, closeUninstall, settings, toast } = useApp();
@@ -36,6 +79,7 @@ export function UninstallWizard() {
   const [dryRun, setDryRun] = useState(false);
   const [ack, setAck] = useState(false);
   const [summary, setSummary] = useState<RemovalSummary>();
+  const [impact, setImpact] = useState<UninstallImpact>();
 
   // Start a session whenever a new request arrives.
   useEffect(() => {
@@ -52,11 +96,15 @@ export function UninstallWizard() {
     setRecycle(settings.useRecycleBin);
     setRestorePoint(settings.createRestorePoint);
     setLevel(settings.defaultLeftoverLevel);
+    setImpact(undefined);
     api
       .uninstallPrepare(req.programId)
       .then((p) => {
         setPrep(p);
         setStep("confirm");
+        // Measuring can take a moment on a big program: the dialog is usable
+        // while it runs, and it only ever reads.
+        api.uninstallImpact(p.sessionId).then(setImpact).catch(() => {});
       })
       .catch((e) => {
         setError(toError(e));
@@ -195,6 +243,7 @@ export function UninstallWizard() {
             )}
           </>
         )}
+        <ImpactCard impact={impact} />
         {prep.hasQuiet && (
           <label className="checkbox">
             <input type="checkbox" checked={quiet} onChange={(e) => setQuiet(e.target.checked)} />

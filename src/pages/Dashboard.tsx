@@ -1,4 +1,4 @@
-import { Boxes, Copy, FileStack, HardDrive, Power, RefreshCw, ShieldCheck, Sparkles, Zap } from "lucide-react";
+import { Boxes, Copy, FileStack, Gamepad2, HardDrive, Power, RefreshCw, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
 import { UsageBar } from "../components/ui";
 import { useT } from "../i18n";
@@ -6,7 +6,7 @@ import { api } from "../services/api";
 import { useAnalyzer } from "../stores/analyzer";
 import { useApp } from "../stores/app";
 import { isHidden, usePrograms } from "../stores/programs";
-import type { ScanStats } from "../types";
+import type { Game, ScanStats, StartupItem } from "../types";
 import { CATEGORY_COLORS } from "../utils/colors";
 import { formatBytes, formatDate, formatNumber, formatPercent } from "../utils/format";
 
@@ -16,9 +16,14 @@ export function Dashboard() {
   const a = useAnalyzer();
   const [stats, setStats] = useState<ScanStats>();
   const [bigFiles, setBigFiles] = useState<{ n: number; size: number }>();
+  const [games, setGames] = useState<Game[]>();
+  const [startup, setStartup] = useState<StartupItem[]>();
   const progs = usePrograms();
   useEffect(() => {
     if (!progs.loaded) progs.load();
+    // Both only read: the launchers' own files and the startup entries.
+    api.gamesList(false).then(setGames).catch(() => {});
+    api.startupList().then(setStartup).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const visiblePrograms = progs.programs.filter((p) => !isHidden(p));
   const reportedTotal = visiblePrograms.reduce((s, p) => s + (p.reportedSize ?? 0), 0);
@@ -138,7 +143,10 @@ export function Dashboard() {
                 <div className="stat"><span className="value">{formatBytes(cacheSize)}</span><span className="label">{t("categories.cache")}</span></div>
                 <div className="stat"><span className="value">{bigFiles ? formatNumber(bigFiles.n) : "…"}</span><span className="label">&gt; 5 GB</span></div>
                 <div className="stat" role="button" style={{ cursor: "pointer" }} onClick={() => app.navigate("programs")} title={`${t("programs.col_reported")}: ${formatBytes(reportedTotal)}`}><span className="value">{progs.loaded ? formatNumber(visiblePrograms.length) : "…"}</span><span className="label">{t("dashboard.installedPrograms")}</span></div>
-                <div className="stat"><span className="value faint" style={{ fontSize: "1rem" }}>{t("common.notImplemented")}</span><span className="label">{t("dashboard.startup")}</span></div>
+                <div className="stat" role="button" style={{ cursor: "pointer" }} onClick={() => app.navigate("startup")}>
+                  <span className="value">{startup ? formatNumber(startup.filter((s) => s.enabled).length) : "…"}</span>
+                  <span className="label">{t("dashboard.startup")}</span>
+                </div>
               </div>
             </div>
             <div className="card">
@@ -165,6 +173,29 @@ export function Dashboard() {
           </div>
         </div>
       )}
+      {!!games?.length && (
+        <div className="card" style={{ marginTop: "1rem" }}>
+          <div className="row" style={{ marginBottom: "0.5rem" }}>
+            <Gamepad2 size={16} className="muted" />
+            <h3 className="grow" style={{ margin: 0 }}>{t("dashboard.games")}</h3>
+            <span className="muted">{formatBytes(games.reduce((s, g) => s + (g.bytes ?? g.reportedBytes ?? 0), 0))}</span>
+          </div>
+          <div className="col" style={{ gap: "0.2rem", fontSize: "0.9rem" }}>
+            {games.slice(0, 8).map((g) => (
+              <div key={g.path} className="row" style={{ gap: "0.5rem" }}>
+                <span className="grow ellipsis" title={g.path}>{g.name}</span>
+                <span className="faint" style={{ fontSize: "0.8rem" }}>{g.launcher}</span>
+                <span style={{ minWidth: "5rem", textAlign: "right" }}>
+                  {g.bytes ?? g.reportedBytes ? formatBytes(g.bytes ?? g.reportedBytes ?? 0) : "—"}
+                </span>
+                <button className="btn ghost sm" disabled={!g.exists} onClick={() => analyze(g.path)}>{t("dashboard.analyzeGame")}</button>
+              </div>
+            ))}
+          </div>
+          <div className="faint" style={{ fontSize: "0.8rem", marginTop: "0.4rem" }}>{t("dashboard.gamesHint", { n: games.length })}</div>
+        </div>
+      )}
+
     </div>
   );
 }

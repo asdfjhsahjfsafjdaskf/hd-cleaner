@@ -6,7 +6,7 @@ import type {
   ErrorPayload, NodeDetails, NodeRow, OperationRecord, Page, ScanEvent, ScanMeta, ScanMethod, ScanRecord,
   ScanStats, SearchSummary, SortKey, ToolInfo, Assessment, ItemResult, Program, AppSize, Identification, SizesEvent,
   PreparedUninstall, RunEvent, Leftover, LeftoverLevel, RemovalSummary, ForcedTarget, ForcedChoice, ProcInfo,
-  ProcessRow, ProcessDetails, TreeKill, StartupItem, TargetPicked, StartupImpact, CategorySummary, CleanItem, CleanEvent, CleanReport, InstallTrace, MonitorStatus, BackupSet, BackupManifest, RestoreResult, Timeline,
+  ProcessRow, ProcessDetails, TreeKill, StartupItem, TargetPicked, StartupImpact, CategorySummary, CleanItem, CleanEvent, CleanReport, InstallTrace, MonitorStatus, BackupSet, BackupManifest, RestoreResult, Timeline, AppAnalysis, CleanOutcome, UninstallImpact, Game,
 } from "../types";
 
 export function isErrorPayload(e: unknown): e is ErrorPayload {
@@ -120,6 +120,7 @@ export const api = {
   leftoversRemove: (sessionId: number, ids: number[], recycle: boolean, allowDangerous: boolean, dryRun: boolean) =>
     invoke<RemovalSummary>("leftovers_remove", { sessionId, ids, recycle, allowDangerous, dryRun }),
   uninstallFinish: (sessionId: number) => invoke<void>("uninstall_finish", { sessionId }),
+  uninstallImpact: (sessionId: number) => invoke<UninstallImpact>("uninstall_impact", { sessionId }),
   leftoversRemoveBatch: (selections: { sessionId: number; ids: number[] }[], recycle: boolean, allowDangerous: boolean, dryRun: boolean) =>
     invoke<[number, RemovalSummary][]>("leftovers_remove_batch", { selections, recycle, allowDangerous, dryRun }),
   forcedResolve: (input: { name?: string; exe?: string; folder?: string }) =>
@@ -146,6 +147,10 @@ export const api = {
   traceDelete: (id: number) => invoke<boolean>("trace_delete", { id }),
   traceExport: (id: number, path: string) => invoke<number>("trace_export", { id, path }),
   traceImport: (path: string, suffix: string) => invoke<InstallTrace>("trace_import", { path, suffix }),
+
+  gamesList: (measure: boolean) => invoke<Game[]>("games_list", { measure }),
+  appAnalysis: (id: string) => invoke<AppAnalysis>("app_analysis", { id }),
+  appCleanCache: (id: string, category: string, dryRun: boolean) => invoke<CleanOutcome>("app_clean_cache", { id, category, dryRun }),
 
   backupsList: () => invoke<BackupSet[]>("backups_list"),
   backupRead: (id: string) => invoke<BackupManifest>("backup_read", { id }),

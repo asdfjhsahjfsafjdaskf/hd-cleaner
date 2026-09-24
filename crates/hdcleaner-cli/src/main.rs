@@ -84,6 +84,12 @@ enum Cmd {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Games the installed launchers (Steam, Epic, Riot) report.
+    Games {
+        /// Measure each game folder now (slow: it walks every file).
+        #[arg(long)]
+        measure: bool,
+    },
     /// How a folder's size moved across the snapshots already saved.
     Timeline {
         path: String,
@@ -406,6 +412,29 @@ fn run(cli: Cli) -> Result<()> {
             let rows = hdcleaner_core::export::export_to_file(&tree, &hdcleaner_core::export::ExportSet::Subtree(ROOT), fmt, &output)
                 .map_err(explain)?;
             eprintln!("{rows} rows written to {}", output.display());
+        }
+        Cmd::Games { measure } => {
+            use hdcleaner_core::smartstorage;
+            let libs = smartstorage::libraries();
+            let mut games = smartstorage::games();
+            if measure {
+                eprintln!("measuring {} folders...", games.len());
+                smartstorage::measure(&mut games, &|| false);
+            }
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "libraries": libs, "games": games }))?);
+                return Ok(());
+            }
+            for l in &libs {
+                println!("{:<6} {:<60} {} games", l.launcher, l.path, l.games);
+            }
+            println!();
+            for g in &games {
+                let size = g.bytes.or(g.reported_bytes).map(bytes).unwrap_or_else(|| "-".into());
+                println!("{:<6} {:<42} {:>10}{}  {}", g.launcher, g.name, size, if g.exists { "" } else { "  (missing)" }, g.path);
+            }
+            println!("
+{} games in {} libraries", games.len(), libs.len());
         }
         Cmd::Timeline { path, root, limit } => {
             use hdcleaner_core::timeline::{self, Source};
