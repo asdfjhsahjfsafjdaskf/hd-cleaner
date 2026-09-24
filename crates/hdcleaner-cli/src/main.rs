@@ -75,13 +75,23 @@ enum Cmd {
         #[arg(long, default_value = "1MB")]
         min_size: String,
     },
-    /// Export scan results to CSV or JSON.
+    /// Export scan results to CSV or JSON, or write an HTML storage report.
     Export {
         path: String,
+        /// csv, json or html.
         #[arg(long, default_value = "csv")]
         format: String,
         #[arg(long)]
         output: PathBuf,
+    },
+    /// How a folder's size moved across the snapshots already saved.
+    Timeline {
+        path: String,
+        /// Only snapshots of this root (defaults to the path's drive).
+        #[arg(long)]
+        root: Option<String>,
+        #[arg(long, default_value_t = 12)]
+        limit: usize,
     },
     /// Compare two snapshots.
     Diff { old: PathBuf, new: PathBuf, #[arg(long, default_value_t = 30)] top: usize },
@@ -385,11 +395,57 @@ fn run(cli: Cli) -> Result<()> {
             }
         }
         Cmd::Export { path, format, output } => {
-            let fmt = hdcleaner_core::export::ExportFormat::parse(&format).context("format must be csv or json")?;
+            if format.eq_ignore_ascii_case("html") {
+                let tree = scan_with_progress(&path, ScanMethod::Auto, false, cli.json)?;
+                let size = hdcleaner_core::report::write_html_file(&tree, ROOT, &output).map_err(explain)?;
+                eprintln!("report written to {} ({})", output.display(), bytes(size));
+                return Ok(());
+            }
+            let fmt = hdcleaner_core::export::ExportFormat::parse(&format).context("format must be csv, json or html")?;
             let tree = scan_with_progress(&path, ScanMethod::Auto, false, cli.json)?;
             let rows = hdcleaner_core::export::export_to_file(&tree, &hdcleaner_core::export::ExportSet::Subtree(ROOT), fmt, &output)
                 .map_err(explain)?;
             eprintln!("{rows} rows written to {}", output.display());
+        }
+        Cmd::Timeline { path, root, limit } => {
+            use hdcleaner_core::timeline::{self, Source};
+            let db = hdcleaner_core::db::Database::open(&hdcleaner_core::util::app_data_dir().join("hdcleaner.db")).map_err(explain)?;
+            let root = root.unwrap_or_else(|| timeline::root_of(&path));
+            let scans = db.list_scans(Some(&root), limit).map_err(explain)?;
+            let files: Vec<(String, i64)> = scans
+                .iter()
+                .filter_map(|s| s.snapshot_path.clone().map(|f| (f, s.started_ms)))
+                .filter(|(f, _)| std::path::Path::new(f).exists())
+                .collect();
+            if files.is_empty() {
+                bail!("no snapshots saved for {root} yet — run a scan first (snapshots are kept per scan)");
+            }
+            let sources: Vec<Source> = files.iter().map(|(f, ms)| Source { file: f, started_ms: *ms }).collect();
+            eprintln!("reading {} snapshots...", sources.len());
+            let t = timeline::build(&path, &sources, &|| false);
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&t)?);
+                return Ok(());
+            }
+            for p in &t.points {
+                if p.missing {
+                    println!("{}  {:>12}", hdcleaner_core::format::datetime(p.taken_ms), "not there");
+                } else {
+                    println!("{}  {:>12}  {} files", hdcleaner_core::format::datetime(p.taken_ms), bytes(p.alloc), p.files);
+                }
+            }
+            if t.days > 0.0 {
+                let word = if t.delta >= 0 { "grew" } else { "shrank" };
+                let window = if t.days >= 1.0 { format!("{:.0} days", t.days) } else { format!("{:.1} hours", t.days * 24.0) };
+                println!("
+{} {word} {} in {window}", path, bytes(t.delta.unsigned_abs()));
+            } else {
+                println!("
+not enough snapshots to show a change");
+            }
+            if t.unreadable > 0 {
+                eprintln!("{} snapshots could not be read", t.unreadable);
+            }
         }
         Cmd::Diff { old, new, top } => {
             let a = hdcleaner_core::scan::snapshot::load(&old).map_err(explain)?;
@@ -627,8 +683,12 @@ fn run(cli: Cli) -> Result<()> {
                 Err(e) => return Err(explain(e)),
             }
         }
-        Cmd::Cleanup { analyze: _, run, items, confirm, dry_run } => {
+        Cmd::Cleanup { analyze, run, items, confirm, dry_run } => {
             use hdcleaner_core::cleaner;
+            if analyze && run.is_some() {
+                bail!("--analyze only lists what could be cleaned: drop it to use --run");
+            }
+            let run = if analyze { None } else { run };
             eprintln!("analyzing...");
             let mut results = cleaner::analyze();
             // C:\Windows\Temp and other machine-wide folders cannot be listed

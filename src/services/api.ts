@@ -6,7 +6,7 @@ import type {
   ErrorPayload, NodeDetails, NodeRow, OperationRecord, Page, ScanEvent, ScanMeta, ScanMethod, ScanRecord,
   ScanStats, SearchSummary, SortKey, ToolInfo, Assessment, ItemResult, Program, AppSize, Identification, SizesEvent,
   PreparedUninstall, RunEvent, Leftover, LeftoverLevel, RemovalSummary, ForcedTarget, ForcedChoice, ProcInfo,
-  ProcessRow, ProcessDetails, TreeKill, StartupItem, TargetPicked, StartupImpact, CategorySummary, CleanItem, CleanEvent, CleanReport, InstallTrace, MonitorStatus, BackupSet, BackupManifest, RestoreResult,
+  ProcessRow, ProcessDetails, TreeKill, StartupItem, TargetPicked, StartupImpact, CategorySummary, CleanItem, CleanEvent, CleanReport, InstallTrace, MonitorStatus, BackupSet, BackupManifest, RestoreResult, Timeline,
 } from "../types";
 
 export function isErrorPayload(e: unknown): e is ErrorPayload {
@@ -71,6 +71,8 @@ export const api = {
   resultRows: (resultId: number, offset: number, limit: number) => invoke<Page<NodeRow>>("result_rows", { resultId, offset, limit }),
   resultSort: (resultId: number, sort: SortKey, desc: boolean) => invoke<void>("result_sort", { resultId, sort, desc }),
   exportResults: (resultId: number, format: "csv" | "json", path: string) => invoke<number>("export_results", { resultId, format, path }),
+  exportReport: (scanId: number, path: string, scope?: number) => invoke<number>("export_report", { scanId, scope, path }),
+  timelineBuild: (path: string, limit?: number) => invoke<Timeline>("timeline_build", { path, limit }),
 
   dupStart: (scanId: number, options: { mode: DupMode; minSize: number; scope?: number }, onEvent: (e: DupEvent) => void) => {
     const ch = new Channel<DupEvent>();

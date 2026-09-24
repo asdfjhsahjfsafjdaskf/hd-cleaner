@@ -685,3 +685,24 @@ export interface RestoreResult {
   values?: number | null;
   error?: ErrorPayload | null;
 }
+
+// ---- timeline ---------------------------------------------------------------
+
+export interface TimelinePoint {
+  takenMs: number;
+  size: number;
+  alloc: number;
+  files: number;
+  dirs: number;
+  /** The folder was not in this snapshot. */
+  missing: boolean;
+}
+
+export interface Timeline {
+  path: string;
+  points: TimelinePoint[];
+  /** Newest minus oldest measured point, in allocated bytes. */
+  delta: number;
+  days: number;
+  unreadable: number;
+}

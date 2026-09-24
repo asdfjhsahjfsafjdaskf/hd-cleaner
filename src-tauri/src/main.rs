@@ -137,6 +137,8 @@ fn main() {
             commands::monitor::trace_delete,
             commands::monitor::trace_export,
             commands::monitor::trace_import,
+            commands::scan::export_report,
+            commands::scan::timeline_build,
             commands::backups::backups_list,
             commands::backups::backup_read,
             commands::backups::backup_restore,

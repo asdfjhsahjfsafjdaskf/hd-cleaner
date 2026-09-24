@@ -245,6 +245,45 @@ pub async fn compare_snapshot(
     Ok(hdcleaner_core::diff::diff(&old, &t, limit.unwrap_or(200)))
 }
 
+/// How a folder's size moved across the snapshots already saved. Nothing is
+/// scanned: only snapshots on disk are read, and a folder missing from one is
+/// reported as missing rather than as zero.
+#[tauri::command]
+pub async fn timeline_build(state: State<'_, AppState>, path: String, limit: Option<usize>) -> CmdResult<hdcleaner_core::timeline::Timeline> {
+    let root = hdcleaner_core::timeline::root_of(&path);
+    let scans = state.db.lock().list_scans(Some(&root), limit.unwrap_or(12).min(50)).ui()?;
+    let files: Vec<(String, i64)> = scans
+        .into_iter()
+        .filter_map(|s| s.snapshot_path.map(|f| (f, s.started_ms)))
+        .filter(|(f, _)| std::path::Path::new(f).exists())
+        .collect();
+    tauri::async_runtime::spawn_blocking(move || {
+        let sources: Vec<hdcleaner_core::timeline::Source> =
+            files.iter().map(|(f, ms)| hdcleaner_core::timeline::Source { file: f, started_ms: *ms }).collect();
+        hdcleaner_core::timeline::build(&path, &sources, &|| false)
+    })
+    .await
+    .map_err(|e| AppError::Helper(e.to_string()).to_payload())
+}
+
+/// A self-contained HTML report of the scan (or of one folder in it).
+#[tauri::command]
+pub async fn export_report(state: State<'_, AppState>, scan_id: u32, scope: Option<u32>, path: String) -> CmdResult<u64> {
+    let t = state.tree(scan_id)?;
+    let size = {
+        let t = t.read();
+        hdcleaner_core::report::write_html_file(&t, scope.unwrap_or(ROOT), std::path::Path::new(&path)).ui()?
+    };
+    let _ = state.db.lock().record_operation(
+        "export",
+        "completed",
+        "HTML report",
+        1,
+        &serde_json::json!({ "format": "html", "file": path, "bytes": size }),
+    );
+    Ok(size)
+}
+
 #[tauri::command]
 pub async fn export_scan(
     state: State<'_, AppState>,

@@ -251,6 +251,19 @@ export function DiskAnalyzer() {
     }
   };
 
+  /** A self-contained HTML page describing the scan (or the folder in view). */
+  const exportReport = async () => {
+    if (a.scanId === undefined) return;
+    const path = await saveDialog({ filters: [{ name: "HTML", extensions: ["html"] }], defaultPath: "storage-report.html" });
+    if (!path) return;
+    try {
+      await api.exportReport(a.scanId, path, a.viewId);
+      app.toast("success", path);
+    } catch (e) {
+      app.toastError(e);
+    }
+  };
+
   const openSnapshot = async () => {
     const path = await openDialog({ filters: [{ name: "Snapshot", extensions: ["hdcs", "nxs"] }], multiple: false });
     if (typeof path !== "string") return;
@@ -360,6 +373,7 @@ export function DiskAnalyzer() {
             openMenu(e.clientX, e.clientY, [
               { label: t("analyzer.exportCsv"), onClick: () => exportAs("csv") },
               { label: t("analyzer.exportJson"), onClick: () => exportAs("json") },
+              { label: t("analyzer.exportReport"), onClick: exportReport },
               "sep",
               { label: t("analyzer.exportSnapshot"), onClick: saveSnapshot },
             ])

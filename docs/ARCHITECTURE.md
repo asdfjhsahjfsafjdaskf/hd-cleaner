@@ -39,6 +39,8 @@ Windows APIs (windows-sys / windows-rs), sistema de arquivos, Registro
 | `fsops` | Plano de exclusão com *fingerprint* → reverificação → Lixeira (`IFileOperation`) ou permanente; renomear sem sobrescrever; abrir, Explorer, propriedades, terminal |
 | `elevation` | Helper elevado de superfície mínima via UAC + named pipe (`scan-ntfs`, `apply-ops` com operações tipadas e revalidadas) |
 | `uninstall`, `leftovers`, `regops`, `shortcuts`, `sysitems` | Desinstalador oficial com espera da árvore de processos; motor de sobras; backup .reg + allowlist de exclusão no Registro; alvos de .lnk; Run/serviços/tarefas |
+| `report` | Relatório de armazenamento em HTML autocontido (sem scripts nem recursos externos) |
+| `timeline` | Tamanho de uma pasta ao longo dos snapshots salvos; pasta ausente nunca vira zero |
 | `backups` | O que foi salvo antes de remover: manifesto, quarentena, restauração (nunca sobrescreve) e exclusão |
 | `monitor` | Retrato do sistema antes/depois de uma instalação + `ReadDirectoryChangesW` durante ela; o rastro marca o que é do programa e o que é ruído de outro |
 | `db` | SQLite: settings, operações (journal), scans/snapshots, rastros de instalação |
@@ -104,7 +106,7 @@ Legenda: ✅ implementado e testado · 🟡 parcial · ⛔ não implementado (ma
 | Duplicados (12) | ✅ | Seleção inteligente só pré-seleciona; impede excluir todas as cópias de um grupo |
 | Gerenciamento de arquivos (13) | 🟡 | Abrir, renomear, copiar/mover (diálogo nativo do shell), Lixeira, permanente, copiar caminho, propriedades, terminal/PowerShell. Fila visual de operações longas ainda não |
 | Exportação CSV/JSON, snapshots, comparação (14) | ✅ | Export/import da MFT bruta não |
-| CLI (15) | 🟡 | `drives scan largest search duplicates export diff delete programs uninstall startup processes kill cleanup` |
+| CLI (15) | ✅ | `drives scan largest search duplicates export (csv/json/html) timeline diff delete programs uninstall startup processes kill cleanup` |
 | Programas instalados (16) | ✅ | HKLM 64/32 + HKCU, MSI, AppX/MSIX/Store (WinRT, sem admin); ícones (DisplayIcon → desinstalador → .ico/.exe da pasta); oculta componentes de sistema/updates/frameworks por padrão; busca, filtros, ordenação; CLI `hdcleaner programs [--sizes]` |
 | Tamanho real (17), App Storage Map (40/66-B), identificar programa (40) | ✅ | Instalação/dados/cache/logs; locais Confirmado / Provável / Possivelmente relacionado com motivo; usa varredura carregada quando existe; "Ver no mapa do disco" destaca as pastas no treemap; "Identificar programa instalado" no menu e no painel de detalhes |
 | Desinstalação normal + busca de sobras (18–19) | ✅ | Assistente completo, 3 níveis com confiança/motivo, backup .reg, Lixeira, dry run, UAC único via helper `apply-ops`, CLI `hdcleaner uninstall`; teste de ponta a ponta com programa falso |
@@ -142,5 +144,5 @@ Dados locais: `%LOCALAPPDATA%\HDCleaner` (`hdcleaner.db`, `logs\`, `snapshots\`)
 
 ## 6. Próximos passos (roteiro)
 
-1. Fase 12: relatório HTML, Timeline de snapshots e `cleanup --analyze` na CLI.
+1. Fase 13: App Analyzer completo, Uninstall Impact e Smart Storage.
 2. Monitoramento incremental (`ReadDirectoryChangesW`/USN Journal) e colunas de duplicados na file view.

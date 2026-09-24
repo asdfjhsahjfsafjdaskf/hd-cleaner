@@ -1,6 +1,6 @@
 # HD Cleaner — Status do projeto
 
-**Atualizado em 23/09/2026**, ao final da Fase 11 (backups, quarentena e restauração).
+**Atualizado em 24/09/2026**, ao final da Fase 12 (relatório HTML, linha do tempo e CLI).
 
 Este arquivo registra **tudo o que já foi feito** e **tudo o que ainda falta**, seguindo as seções da especificação original. Nenhuma funcionalidade listada aqui como feita é simulada: todas foram compiladas, testadas por testes automatizados e, quando indicado, verificadas no app real, nesta máquina.
 
@@ -17,7 +17,7 @@ Documentos relacionados:
 |---|---|
 | Stack | Rust 1.98 (MSVC) + Tauri 2 + React 19 + TypeScript + Vite |
 | Estrutura | `crates/hdcleaner-core` (toda a lógica) · `crates/hdcleaner-cli` (binário `hdcleaner`) · `crates/test-fixtures` (programa falso de teste) · `src-tauri` (camada de comandos) · `src` (interface) |
-| Testes automatizados | **93 testes Rust + 7 testes de ponta a ponta (desinstalação normal, forçada, inicialização, árvore de processos, limpeza em sandbox, Lixeira e monitor de instalação) passando**. Os testes destrutivos usam apenas pastas temporárias ou o programa falso de teste (sob o perfil do usuário) |
+| Testes automatizados | **96 testes Rust + 7 testes de ponta a ponta (desinstalação normal, forçada, inicialização, árvore de processos, limpeza em sandbox, Lixeira e monitor de instalação) passando**. Os testes destrutivos usam apenas pastas temporárias ou o programa falso de teste (sob o perfil do usuário) |
 | Tipagem do frontend | `tsc --noEmit` sem erros |
 | Build de release | `hd-cleaner.exe` com 13,4 MB (sem instalador). Instaladores NSIS/MSI ainda não foram gerados |
 | Controle de versão | A pasta **não é um repositório git** e nenhum commit foi feito |
@@ -345,6 +345,14 @@ Os dados locais ficam em `%LOCALAPPDATA%\HDCleaner`:
 - **Verificado na tela:** app de teste instalado, desinstalado pelo backend do app (7 sobras removidas, quarentena gravada com 645 KB), e a página Backups restaurou os 7 itens — pastas do AppData, atalho e as duas entradas do Registro — com o `settings.json` de volta no lugar certo; restaurar de novo respondeu "já existe" sem sobrescrever. O backup foi excluído pela própria tela.
 - **Testes:** ida e volta da quarentena (salvar, restaurar, recusar sobrescrita, excluir), leitura de pasta antiga sem manifesto, id que tenta sair da pasta de backups, import/export do Registro, e o `uninstall_flow` agora vai até restaurar o que foi removido de um programa de verdade.
 
+### Fase 12 — Relatório HTML, linha do tempo e CLI
+
+- **Relatório de armazenamento em HTML** (`report.rs`): uma página **autocontida** — sem scripts e sem nada carregado de fora — com o total, o espaço em disco, a contagem de arquivos e pastas, o espaço livre do volume, a divisão por categoria, as extensões que mais ocupam, o histograma por tamanho de arquivo e as 25 maiores pastas e os 25 maiores arquivos, cada linha com barra proporcional. Nomes de arquivo são escapados (teste automatizado confere que `<`, `>` e aspas não entram crus e que não há `<script>` nem URL externa). Sai pelo menu **Exportar → Exportar relatório HTML** (respeitando a pasta em que você está) e por `hdcleaner export <caminho> --format html --output arquivo.html`. Fica no histórico como `export`.
+- **Linha do tempo** (`timeline.rs`): mostra o tamanho de uma pasta ao longo dos **snapshots que já existem** — nada é varrido na hora. Uma pasta que não está em algum snapshot aparece como "não está neste snapshot", nunca como zero; snapshots ilegíveis são contados, não adivinhados. O resumo diz quanto a pasta cresceu ou diminuiu e em quantos dias (ou horas, quando é do mesmo dia). Fica na tela **Mudanças no Disco**, e funciona mesmo sem varredura aberta, porque só lê snapshots. Na CLI: `hdcleaner timeline <caminho> [--root C:\] [--limit N]` (com `--json`).
+- **`hdcleaner cleanup --analyze`**: lista sem limpar (que já era o padrão sem `--run`), e recusa a combinação `--analyze --run` em vez de fazer algo que o usuário não pediu.
+- **Verificado no PC real:** relatório gerado pela CLI e pela tela (11,5 KB, números batendo com a varredura: 441 KB, 50 arquivos, 10 pastas) e linha do tempo montada a partir de 3 snapshots reais de `C:\` (30,0 GB, 72.348 → 72.349 arquivos) em ~0,5 s, pela tela e pela CLI.
+- **Testes:** página autocontida e com escape correto; linha do tempo lendo vários snapshots (ordem por data, pasta ausente, arquivo ilegível) e o mapeamento de caminho para volume.
+
 ### Recursos das fases 11 e 12 adiantados
 
 - **Exclusão segura:**
@@ -420,16 +428,13 @@ Durante o teste da categoria "Temporários do Windows", a limpeza real foi execu
 Legenda: 🔴 não iniciado · 🟡 parcial
 
 
-### Fase 12 — CLI, exportação e snapshots 🟡 (próxima)
+### Fase 12 — CLI, exportação e snapshots 🟡
 
-- Já existe: a maior parte (veja acima).
+- Já existe: tudo, exceto um item opcional.
 - Falta:
-  - `hdcleaner cleanup --analyze`, que depende da fase 9;
-  - exportar e importar a MFT bruta para análise offline (opcional);
-  - relatório de armazenamento em **HTML** (seção 56); hoje só há CSV e JSON;
-  - **Timeline** (seção 66-E): "esta pasta cresceu X GB nos últimos 30 dias", usando vários snapshots.
+  - exportar e importar a **MFT bruta** para análise offline — marcado como opcional na especificação e **não implementado**; a leitura da MFT continua sendo feita ao vivo, e o snapshot `.hdcs` já serve para levar uma varredura para outra máquina.
 
-### Fase 13 — Integração total analisador ↔ desinstalador 🟡
+### Fase 13 — Integração total analisador ↔ desinstalador 🟡 (próxima)
 
 - Já existe: tamanho real, App Storage Map, identificar programa e aplicativo relacionado.
 - Falta:
